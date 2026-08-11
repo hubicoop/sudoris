@@ -1,0 +1,402 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://main.gd" id="1_main"]
+[ext_resource type="Script" path="res://board_view.gd" id="2_board"]
+[ext_resource type="Script" path="res://tray_view.gd" id="3_tray"]
+[ext_resource type="FontFile" path="res://fonts/Xolonium-Regular.ttf" id="4_font"]
+
+[sub_resource type="StyleBoxFlat" id="StylePanel"]
+bg_color = Color(0.929412, 0.913725, 0.815686, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.560784, 0.635294, 0.298039, 1)
+corner_radius_top_left = 24
+corner_radius_top_right = 24
+corner_radius_bottom_right = 24
+corner_radius_bottom_left = 24
+
+[sub_resource type="StyleBoxFlat" id="StylePrimary"]
+bg_color = Color(0.137255, 0.180392, 0.0784314, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.498039, 0.6, 0.231373, 1)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[sub_resource type="StyleBoxFlat" id="StyleSoft"]
+bg_color = Color(0.662745, 0.741176, 0.396078, 1)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[node name="Sudoris" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+theme_override_fonts/font = ExtResource("4_font")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.25098, 0.345098, 0.113725, 1)
+mouse_filter = 2
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 16.0
+offset_right = -12.0
+offset_bottom = -10.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
+
+[node name="Layout" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="Header" type="HBoxContainer" parent="Margin/Layout"]
+layout_mode = 2
+
+[node name="Words" type="VBoxContainer" parent="Margin/Layout/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Title" type="Label" parent="Margin/Layout/Header/Words"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.941176, 0.960784, 0.780392, 1)
+theme_override_font_sizes/font_size = 27
+text = "SUDORIS"
+
+[node name="LevelLabel" type="Label" parent="Margin/Layout/Header/Words"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.682353, 0.752941, 0.454902, 1)
+theme_override_font_sizes/font_size = 12
+text = "LEVEL 1  /  TARGETS 3-5"
+
+[node name="HeaderRight" type="VBoxContainer" parent="Margin/Layout/Header"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="ScoreRow" type="HBoxContainer" parent="Margin/Layout/Header/HeaderRight"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ScoreLabel" type="Label" parent="Margin/Layout/Header/HeaderRight/ScoreRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.941176, 0.960784, 0.780392, 1)
+theme_override_font_sizes/font_size = 20
+text = "0"
+
+[node name="ComboLabel" type="Label" parent="Margin/Layout/Header/HeaderRight/ScoreRow"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_colors/font_color = Color(0.760784, 0.870588, 0.356863, 1)
+theme_override_font_sizes/font_size = 11
+text = "COMBO x2"
+vertical_alignment = 1
+
+[node name="PauseButton" type="Button" parent="Margin/Layout/Header/HeaderRight"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(92, 30)
+layout_mode = 2
+theme_override_font_sizes/font_size = 12
+theme_override_styles/normal = SubResource("StylePrimary")
+theme_override_colors/font_color = Color(0.917647, 0.941176, 0.721569, 1)
+text = "II"
+
+[node name="StatusLabel" type="Label" parent="Margin/Layout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.74902, 0.796078, 0.560784, 1)
+theme_override_font_sizes/font_size = 12
+autowrap_mode = 2
+text = "Fill every square. Match the region counts."
+
+[node name="BoardView" type="Control" parent="Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(424, 424)
+layout_mode = 2
+size_flags_horizontal = 4
+script = ExtResource("2_board")
+
+[node name="Actions" type="HBoxContainer" parent="Margin/Layout"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="ResetButton" type="Button" parent="Margin/Layout/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(124, 40)
+layout_mode = 2
+theme_override_styles/normal = SubResource("StyleSoft")
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+text = "RESET"
+
+[node name="Hint" type="Label" parent="Margin/Layout/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_colors/font_color = Color(0.682353, 0.752941, 0.454902, 1)
+theme_override_font_sizes/font_size = 11
+text = "TAP ROTATE / DRAG TO PLACE"
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="TrayView" type="Control" parent="Margin/Layout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(424, 104)
+layout_mode = 2
+size_flags_horizontal = 4
+script = ExtResource("3_tray")
+
+[node name="PauseModal" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0745098, 0.0980392, 0.0431373, 0.78)
+
+[node name="Center" type="CenterContainer" parent="PauseModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="PauseModal/Center"]
+custom_minimum_size = Vector2(290, 210)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Content" type="VBoxContainer" parent="PauseModal/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="Title" type="Label" parent="PauseModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_font_sizes/font_size = 24
+text = "PAUSED"
+horizontal_alignment = 1
+
+[node name="ResumeButton" type="Button" parent="PauseModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_styles/normal = SubResource("StyleSoft")
+text = "RESUME"
+
+[node name="NewPuzzleButton" type="Button" parent="PauseModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_styles/normal = SubResource("StylePrimary")
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "NEW PUZZLE"
+
+[node name="GameOverModal" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0745098, 0.0980392, 0.0431373, 0.84)
+
+[node name="Center" type="CenterContainer" parent="GameOverModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="GameOverModal/Center"]
+custom_minimum_size = Vector2(290, 186)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Content" type="VBoxContainer" parent="GameOverModal/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Title" type="Label" parent="GameOverModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.584314, 0.239216, 0.180392, 1)
+theme_override_font_sizes/font_size = 26
+text = "GAME FAILED"
+horizontal_alignment = 1
+
+[node name="GameOverReason" type="Label" parent="GameOverModal/Center/Panel/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_font_sizes/font_size = 14
+text = "No available piece can fit on the board."
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="RestartButton" type="Button" parent="GameOverModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_styles/normal = SubResource("StylePrimary")
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "RESTART"
+
+[node name="WinModal" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0745098, 0.0980392, 0.0431373, 0.84)
+
+[node name="Center" type="CenterContainer" parent="WinModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="WinModal/Center"]
+custom_minimum_size = Vector2(300, 200)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Content" type="VBoxContainer" parent="WinModal/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Title" type="Label" parent="WinModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.286275, 0.462745, 0.137255, 1)
+theme_override_font_sizes/font_size = 26
+text = "LEVEL COMPLETE"
+horizontal_alignment = 1
+
+[node name="Message" type="Label" parent="WinModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_font_sizes/font_size = 14
+text = "The next puzzle will be a little harder."
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="NextLevelButton" type="Button" parent="WinModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_styles/normal = SubResource("StylePrimary")
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "NEXT LEVEL"
+
+[node name="HowToModal" type="ColorRect" parent="."]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0745098, 0.0980392, 0.0431373, 0.84)
+
+[node name="Center" type="CenterContainer" parent="HowToModal"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="HowToModal/Center"]
+custom_minimum_size = Vector2(320, 356)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Content" type="VBoxContainer" parent="HowToModal/Center/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 14
+
+[node name="Title" type="Label" parent="HowToModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_font_sizes/font_size = 26
+text = "HOW TO PLAY"
+horizontal_alignment = 1
+
+[node name="StepOne" type="Label" parent="HowToModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_font_sizes/font_size = 15
+text = "1. Fill every square on the 9 x 9 board."
+autowrap_mode = 2
+
+[node name="StepTwo" type="Label" parent="HowToModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_font_sizes/font_size = 15
+text = "2. Each 3 x 3 region shows how many different pieces must touch it."
+autowrap_mode = 2
+
+[node name="StepThree" type="Label" parent="HowToModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_font_sizes/font_size = 15
+text = "3. Tap the rotate icon for a 90 degree turn, then drag the piece onto the board."
+autowrap_mode = 2
+
+[node name="Tip" type="Label" parent="HowToModal/Center/Panel/Content"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.329412, 0.4, 0.184314, 1)
+theme_override_font_sizes/font_size = 13
+text = "A wrong region count or running out of valid moves fails the puzzle."
+autowrap_mode = 2
+
+[node name="HowToPlayButton" type="Button" parent="HowToModal/Center/Panel/Content"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+theme_override_styles/normal = SubResource("StylePrimary")
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "GOT IT"
