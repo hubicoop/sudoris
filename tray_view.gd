@@ -51,11 +51,12 @@ func _draw() -> void:
 		var rotate_rect := _rotate_rect(card)
 		var rotate_center := rotate_rect.get_center()
 		draw_style_box(_slot_style(id != -1), card)
-		draw_arc(rotate_center, 7, -2.4, 1.6, 16, Color("#9eb765"), 1.8, true)
-		draw_line(rotate_center + Vector2(-5, -5), rotate_center + Vector2(-9, -1), Color("#9eb765"), 1.8)
-		draw_line(rotate_center + Vector2(-5, -5), rotate_center + Vector2(0, -4), Color("#9eb765"), 1.8)
+		draw_style_box(_rotate_style(), rotate_rect)
+		draw_arc(rotate_center, 10, -2.4, 1.6, 20, Color("#c4d578"), 2.4, true)
+		draw_line(rotate_center + Vector2(-7, -7), rotate_center + Vector2(-12, -2), Color("#c4d578"), 2.4)
+		draw_line(rotate_center + Vector2(-7, -7), rotate_center + Vector2(0, -5), Color("#c4d578"), 2.4)
 		if id == -1 or id >= pieces.size():
-			draw_string(ThemeDB.fallback_font, Vector2(center_x - 18, 72), "USED", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#617044"))
+			draw_string(ThemeDB.fallback_font, Vector2(center_x - 18, 66), "USED", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#617044"))
 			continue
 		var cells: Array[Vector2i] = pieces[id].rotated_cells()
 		var max_x := 0
@@ -63,8 +64,9 @@ func _draw() -> void:
 		for cell in cells:
 			max_x = max(max_x, cell.x)
 			max_y = max(max_y, cell.y)
-		var unit := 17.0
-		var piece_center_y := card.position.y + card.size.y * 0.56
+		var unit := 27.0
+		var piece_area_bottom := rotate_rect.position.y - 4.0
+		var piece_center_y := card.position.y + (piece_area_bottom - card.position.y) * 0.5
 		var start := Vector2(center_x - (max_x + 1) * unit * 0.5, piece_center_y - (max_y + 1) * unit * 0.5)
 		for cell in cells:
 			var cell_rect := Rect2(start + Vector2(cell) * unit, Vector2.ONE * unit)
@@ -76,7 +78,18 @@ func _card_rect(slot: int, slot_width: float) -> Rect2:
 	return Rect2(slot * slot_width + 10, 8, slot_width - 20, size.y - 16)
 
 func _rotate_rect(card: Rect2) -> Rect2:
-	return Rect2(card.end - Vector2(40, 40), Vector2(36, 36))
+	return Rect2(Vector2(card.position.x + 8, card.end.y - 43), Vector2(card.size.x - 16, 35))
+
+func _rotate_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("#33431d")
+	style.border_color = Color("#708d3c")
+	style.set_border_width_all(1)
+	style.corner_radius_top_left = 10
+	style.corner_radius_top_right = 10
+	style.corner_radius_bottom_left = 10
+	style.corner_radius_bottom_right = 10
+	return style
 
 func _slot_style(active: bool) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()

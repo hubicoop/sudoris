@@ -138,6 +138,11 @@ theme_override_font_sizes/font_size = 12
 autowrap_mode = 2
 text = "Fill every square. Match the region counts."
 
+[node name="BoardSpacer" type="Control" parent="Margin/Layout"]
+custom_minimum_size = Vector2(0, 14)
+layout_mode = 2
+mouse_filter = 2
+
 [node name="BoardView" type="Control" parent="Margin/Layout"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(424, 424)
@@ -151,10 +156,11 @@ theme_override_constants/separation = 10
 
 [node name="ResetButton" type="Button" parent="Margin/Layout/Actions"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(124, 40)
+custom_minimum_size = Vector2(112, 30)
 layout_mode = 2
 theme_override_styles/normal = SubResource("StyleSoft")
 theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_font_sizes/font_size = 11
 text = "RESET"
 
 [node name="Hint" type="Label" parent="Margin/Layout/Actions"]
@@ -168,7 +174,7 @@ vertical_alignment = 1
 
 [node name="TrayView" type="Control" parent="Margin/Layout"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(424, 104)
+custom_minimum_size = Vector2(424, 150)
 layout_mode = 2
 size_flags_horizontal = 4
 script = ExtResource("3_tray")
@@ -333,6 +339,7 @@ text = "NEXT LEVEL"
 [node name="HowToModal" type="ColorRect" parent="."]
 unique_name_in_owner = true
 visible = false
+z_index = 100
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -340,6 +347,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.0745098, 0.0980392, 0.0431373, 0.84)
+mouse_filter = 0
 
 [node name="Center" type="CenterContainer" parent="HowToModal"]
 layout_mode = 1
@@ -348,6 +356,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+mouse_filter = 1
 
 [node name="Panel" type="PanelContainer" parent="HowToModal/Center"]
 custom_minimum_size = Vector2(320, 356)
@@ -400,3 +409,4 @@ layout_mode = 2
 theme_override_styles/normal = SubResource("StylePrimary")
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 text = "GOT IT"
+mouse_default_cursor_shape = 2

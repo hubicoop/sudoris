@@ -77,6 +77,7 @@ func _ready() -> void:
 	%NewPuzzleButton.pressed.connect(new_puzzle)
 	%RestartButton.pressed.connect(reset_puzzle)
 	%HowToPlayButton.pressed.connect(hide_how_to)
+	%HowToPlayButton.gui_input.connect(_on_how_to_button_input)
 	%NextLevelButton.pressed.connect(next_level)
 	tray_view.piece_picked.connect(start_drag)
 	tray_view.rotate_requested.connect(rotate_piece)
@@ -84,6 +85,12 @@ func _ready() -> void:
 	board_view.drag_moved.connect(move_drag)
 	new_puzzle()
 	how_to_modal.visible = true
+	how_to_modal.move_to_front()
+
+func _on_how_to_button_input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch and not event.pressed:
+		hide_how_to()
+		get_viewport().set_input_as_handled()
 
 func new_puzzle() -> void:
 	draw_order.clear()
