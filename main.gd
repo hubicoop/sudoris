@@ -286,7 +286,7 @@ func reset_puzzle() -> void:
 
 func take_next_piece() -> int:
 	if next_piece >= draw_order.size():
-		return -1
+		return create_extra_piece()
 	var fitting_large: Array[int] = []
 	var fitting_single: Array[int] = []
 	for index in range(next_piece, draw_order.size()):
@@ -307,14 +307,46 @@ func take_next_piece() -> int:
 	next_piece += 1
 	return id
 
+func create_extra_piece() -> int:
+	var fitting_shapes: Array = []
+	var largest_size := 0
+	for base_shape in shape_catalog():
+		var typed_shape: Array[Vector2i] = []
+		for cell in base_shape:
+			typed_shape.append(cell)
+		for orientation in unique_orientations(typed_shape):
+			var cells: Array[Vector2i] = orientation
+			if cells_can_fit(cells):
+				fitting_shapes.append(cells)
+				largest_size = maxi(largest_size, cells.size())
+	if fitting_shapes.is_empty():
+		var fallback: Array[Vector2i] = [Vector2i.ZERO]
+		var fallback_color: Color = PALETTE[pieces.size() % PALETTE.size()]
+		pieces.append(PuzzlePiece.new(fallback, [], fallback_color))
+		return pieces.size() - 1
+	var chosen: Array[Vector2i] = fitting_shapes[rng.randi_range(0, fitting_shapes.size() - 1)]
+	# Give a useful large piece often enough to keep the late game alive.
+	if rng.randf() < 0.35:
+		var largest: Array = []
+		for candidate in fitting_shapes:
+			if candidate.size() == largest_size:
+				largest.append(candidate)
+		if not largest.is_empty():
+			chosen = largest[rng.randi_range(0, largest.size() - 1)]
+	var piece_color: Color = PALETTE[pieces.size() % PALETTE.size()]
+	pieces.append(PuzzlePiece.new(chosen.duplicate(), [], piece_color))
+	return pieces.size() - 1
+
 func piece_can_fit(piece_id: int) -> bool:
-	for orientation in unique_orientations(pieces[piece_id].cells):
-		var cells: Array[Vector2i] = orientation
+	return cells_can_fit(pieces[piece_id].cells)
+
+func cells_can_fit(base_cells: Array[Vector2i]) -> bool:
+	for orientation in unique_orientations(base_cells):
 		for y in BOARD_SIZE:
 			for x in BOARD_SIZE:
 				var valid := true
-				for cell in cells:
-					var target := Vector2i(x, y) + cell
+				for cell in orientation:
+					var target: Vector2i = Vector2i(x, y) + cell
 					if target.x >= BOARD_SIZE or target.y >= BOARD_SIZE or board[target.y][target.x] != EMPTY:
 						valid = false
 						break
@@ -331,7 +363,16 @@ func has_available_move() -> bool:
 func start_drag(piece_id: int, global_position: Vector2) -> void:
 	dragging_piece = piece_id
 	drag_position = board_local_position(global_position)
+	update_drag_lift()
 	refresh_views()
+
+func update_drag_lift() -> void:
+	if dragging_piece == -1:
+		return
+	var max_y := 0
+	for cell in pieces[dragging_piece].rotated_cells():
+		max_y = maxi(max_y, cell.y)
+	board_view.set_drag_lift(maxf(1.65, max_y + 1.25))
 
 func rotate_piece(piece_id: int) -> void:
 	var now := Time.get_ticks_msec()
@@ -341,6 +382,8 @@ func rotate_piece(piece_id: int) -> void:
 		return
 	last_rotation_ms = now
 	pieces[piece_id].rotation = (pieces[piece_id].rotation + 1) % 4
+	if dragging_piece == piece_id:
+		update_drag_lift()
 	refresh_views()
 
 func move_drag(position: Vector2) -> void:

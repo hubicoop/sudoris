@@ -13,6 +13,7 @@ var pieces: Array = []
 var targets: Array[int] = []
 var dragging_piece := -1
 var drag_position := Vector2.ZERO
+var drag_lift_cells := 1.65
 var animated_cells: Array[Vector2i] = []
 var placement_scale := 1.0
 var placement_tween: Tween
@@ -38,6 +39,10 @@ func configure(new_board: Array, new_pieces: Array, new_targets: Array[int], new
 	targets = new_targets
 	dragging_piece = new_dragging_piece
 	drag_position = new_drag_position
+	queue_redraw()
+
+func set_drag_lift(lift_cells: float) -> void:
+	drag_lift_cells = lift_cells
 	queue_redraw()
 
 func animate_placement(cells: Array[Vector2i]) -> void:
@@ -67,7 +72,7 @@ func grid_rect() -> Rect2:
 func origin_at(position: Vector2) -> Vector2i:
 	var rect := grid_rect()
 	var cell_size := rect.size.x / BOARD_SIZE
-	var lifted := position - Vector2(0.0, cell_size * 1.65)
+	var lifted := position - Vector2(0.0, cell_size * drag_lift_cells)
 	return Vector2i(floor((lifted.x - rect.position.x) / cell_size), floor((lifted.y - rect.position.y) / cell_size))
 
 func contains_local(position: Vector2) -> bool:

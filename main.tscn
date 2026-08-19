@@ -145,7 +145,7 @@ mouse_filter = 2
 
 [node name="BoardView" type="Control" parent="Margin/Layout"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(424, 424)
+custom_minimum_size = Vector2(400, 400)
 layout_mode = 2
 size_flags_horizontal = 4
 script = ExtResource("2_board")
@@ -174,7 +174,7 @@ vertical_alignment = 1
 
 [node name="TrayView" type="Control" parent="Margin/Layout"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(424, 150)
+custom_minimum_size = Vector2(424, 180)
 layout_mode = 2
 size_flags_horizontal = 4
 script = ExtResource("3_tray")

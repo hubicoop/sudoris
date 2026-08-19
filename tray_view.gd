@@ -52,11 +52,10 @@ func _draw() -> void:
 		var rotate_center := rotate_rect.get_center()
 		draw_style_box(_slot_style(id != -1), card)
 		draw_style_box(_rotate_style(), rotate_rect)
-		draw_arc(rotate_center, 10, -2.4, 1.6, 20, Color("#c4d578"), 2.4, true)
-		draw_line(rotate_center + Vector2(-7, -7), rotate_center + Vector2(-12, -2), Color("#c4d578"), 2.4)
-		draw_line(rotate_center + Vector2(-7, -7), rotate_center + Vector2(0, -5), Color("#c4d578"), 2.4)
+		draw_arc(rotate_center, 12, -2.4, 1.6, 24, Color("#c4d578"), 2.8, true)
+		draw_line(rotate_center + Vector2(-8, -8), rotate_center + Vector2(-14, -2), Color("#c4d578"), 2.8)
+		draw_line(rotate_center + Vector2(-8, -8), rotate_center + Vector2(0, -6), Color("#c4d578"), 2.8)
 		if id == -1 or id >= pieces.size():
-			draw_string(ThemeDB.fallback_font, Vector2(center_x - 18, 66), "USED", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#617044"))
 			continue
 		var cells: Array[Vector2i] = pieces[id].rotated_cells()
 		var max_x := 0
@@ -64,7 +63,7 @@ func _draw() -> void:
 		for cell in cells:
 			max_x = max(max_x, cell.x)
 			max_y = max(max_y, cell.y)
-		var unit := 27.0
+		var unit := 28.0
 		var piece_area_bottom := rotate_rect.position.y - 4.0
 		var piece_center_y := card.position.y + (piece_area_bottom - card.position.y) * 0.5
 		var start := Vector2(center_x - (max_x + 1) * unit * 0.5, piece_center_y - (max_y + 1) * unit * 0.5)
@@ -78,7 +77,7 @@ func _card_rect(slot: int, slot_width: float) -> Rect2:
 	return Rect2(slot * slot_width + 10, 8, slot_width - 20, size.y - 16)
 
 func _rotate_rect(card: Rect2) -> Rect2:
-	return Rect2(Vector2(card.position.x + 8, card.end.y - 43), Vector2(card.size.x - 16, 35))
+	return Rect2(Vector2(card.position.x + 6, card.end.y - 47), Vector2(card.size.x - 12, 41))
 
 func _rotate_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
