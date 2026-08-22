@@ -67,6 +67,7 @@ var last_rotation_ms := -1000
 var level := 1
 var score := 0
 var combo := 0
+var combo_deadline_ms := 0
 
 func _ready() -> void:
 	rng.randomize()
@@ -86,6 +87,11 @@ func _ready() -> void:
 	new_puzzle()
 	how_to_modal.visible = true
 	how_to_modal.move_to_front()
+
+func _process(_delta: float) -> void:
+	if combo > 0 and Time.get_ticks_msec() > combo_deadline_ms:
+		combo = 0
+		refresh_views()
 
 func _on_how_to_button_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch and not event.pressed:
@@ -114,6 +120,7 @@ func new_puzzle() -> void:
 	next_piece = 0
 	score = 0
 	combo = 0
+	combo_deadline_ms = 0
 	for slot in active_slots.size():
 		active_slots[slot] = take_next_piece()
 	dragging_piece = -1
@@ -276,6 +283,7 @@ func reset_puzzle() -> void:
 	next_piece = 0
 	score = 0
 	combo = 0
+	combo_deadline_ms = 0
 	for slot in active_slots.size():
 		active_slots[slot] = take_next_piece()
 	dragging_piece = -1
@@ -440,12 +448,21 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 		message = "That piece does not fit there."
 		return false
 	var completed_before := completed_region_count()
+	var completed_before_regions := completed_regions_list()
 	var placed_cells := pieces[piece_id].rotated_cells()
 	for cell in placed_cells:
 		var target := origin + cell
 		board[target.y][target.x] = piece_id
+	if Time.get_ticks_msec() > combo_deadline_ms:
+		combo = 0
 	combo += 1
+	combo_deadline_ms = Time.get_ticks_msec() + 1500
 	var completed_regions := completed_region_count() - completed_before
+	var completed_after_regions := completed_regions_list()
+	var newly_completed: Array[int] = []
+	for region in completed_after_regions:
+		if not completed_before_regions.has(region):
+			newly_completed.append(region)
 	var multiplier := combo
 	if completed_regions > 0:
 		multiplier *= int(pow(5, completed_regions))
@@ -455,6 +472,7 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 		if active_slots[slot] == piece_id:
 			active_slots[slot] = take_next_piece()
 	message = "+%d points  /  Combo x%d" % [earned, combo]
+	board_view.animate_completed_regions(newly_completed)
 	if check_failure():
 		return true
 	check_completion()
@@ -468,6 +486,13 @@ func completed_region_count() -> int:
 	for region in BOARD_SIZE:
 		if region_is_full(region) and region_count(region) == targets[region]:
 			completed += 1
+	return completed
+
+func completed_regions_list() -> Array[int]:
+	var completed: Array[int] = []
+	for region in BOARD_SIZE:
+		if region_is_full(region) and region_count(region) == targets[region]:
+			completed.append(region)
 	return completed
 
 func can_place(piece_id: int, origin: Vector2i) -> bool:
@@ -562,6 +587,12 @@ func refresh_views() -> void:
 	level_label.text = "LEVEL %d  /  TARGETS 3-%d" % [level, maximum_region_target()]
 	score_label.text = "%s" % score
 	combo_label.text = "COMBO x%d" % maxi(1, combo)
-	combo_label.visible = combo > 1
+	combo_label.visible = combo > 0
 	board_view.configure(board, pieces, targets, dragging_piece, drag_position)
+	var completed_flags: Array[bool] = []
+	completed_flags.resize(BOARD_SIZE)
+	completed_flags.fill(false)
+	for region in completed_regions_list():
+		completed_flags[region] = true
+	board_view.set_completed_regions(completed_flags)
 	tray_view.configure(pieces, active_slots)

@@ -11,12 +11,16 @@ signal drag_moved(position: Vector2)
 var board: Array = []
 var pieces: Array = []
 var targets: Array[int] = []
+var completed_regions: Array[bool] = []
 var dragging_piece := -1
 var drag_position := Vector2.ZERO
 var drag_lift_cells := 1.65
 var animated_cells: Array[Vector2i] = []
 var placement_scale := 1.0
 var placement_tween: Tween
+var completion_regions: Array[int] = []
+var completion_pulse := 0.0
+var completion_tween: Tween
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -45,6 +49,10 @@ func set_drag_lift(lift_cells: float) -> void:
 	drag_lift_cells = lift_cells
 	queue_redraw()
 
+func set_completed_regions(regions: Array[bool]) -> void:
+	completed_regions = regions.duplicate()
+	queue_redraw()
+
 func animate_placement(cells: Array[Vector2i]) -> void:
 	animated_cells = cells.duplicate()
 	placement_scale = 0.35
@@ -63,6 +71,29 @@ func _finish_placement_animation() -> void:
 	animated_cells.clear()
 	placement_scale = 1.0
 	placement_tween = null
+	queue_redraw()
+
+func animate_completed_regions(regions: Array[int]) -> void:
+	if regions.is_empty():
+		return
+	completion_regions = regions.duplicate()
+	completion_pulse = 0.0
+	if completion_tween:
+		completion_tween.kill()
+	completion_tween = create_tween()
+	completion_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	completion_tween.tween_method(_set_completion_pulse, 0.0, 1.0, 0.22)
+	completion_tween.tween_method(_set_completion_pulse, 1.0, 0.0, 0.42)
+	completion_tween.finished.connect(_finish_completion_animation)
+
+func _set_completion_pulse(value: float) -> void:
+	completion_pulse = value
+	queue_redraw()
+
+func _finish_completion_animation() -> void:
+	completion_regions.clear()
+	completion_pulse = 0.0
+	completion_tween = null
 	queue_redraw()
 
 func grid_rect() -> Rect2:
@@ -92,6 +123,8 @@ func _draw() -> void:
 			var color := Color("#eee8cf")
 			if id != EMPTY and id < pieces.size():
 				color = pieces[id].color
+			if id != EMPTY and _is_completed_region(y / 3 * 3 + x / 3):
+				color = Color("#5eaf4d")
 			var fill_rect := cell_rect.grow(-1.5)
 			if animated_cells.has(Vector2i(x, y)):
 				fill_rect = Rect2(fill_rect.get_center(), Vector2.ZERO).grow_individual(
@@ -115,9 +148,19 @@ func _draw() -> void:
 			var rx := region % 3
 			var ry := region / 3
 			var count := _region_count(region)
-			var chip := Rect2(rect.position + Vector2(rx * 3 * cell_size + 7, ry * 3 * cell_size + 7), Vector2(42, 22))
-			draw_rect(chip, Color("#55752b") if count == targets[region] else Color("#934d3b"))
-			draw_string(ThemeDB.fallback_font, chip.position + Vector2(4, 16), "%d/%d" % [count, targets[region]], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
+			var region_rect := Rect2(rect.position + Vector2(rx, ry) * 3.0 * cell_size, Vector2.ONE * cell_size * 3.0)
+			var text_color := Color("#ffffff") if count > 0 else Color("#11180b")
+			var label := "%d/%d" % [count, targets[region]]
+			draw_string(ThemeDB.fallback_font, region_rect.position + Vector2(0, region_rect.size.y * 0.5 + 8), label, HORIZONTAL_ALIGNMENT_CENTER, region_rect.size.x, 18, text_color)
+	for region in completion_regions:
+		if region < 0 or region >= BOARD_SIZE:
+			continue
+		var rx := region % 3
+		var ry := region / 3
+		var region_rect := Rect2(rect.position + Vector2(rx, ry) * 3.0 * cell_size, Vector2.ONE * cell_size * 3.0)
+		var glow := Color(0.55, 1.0, 0.35, 0.16 * completion_pulse)
+		draw_rect(region_rect.grow(8.0 * completion_pulse), glow, false, 7.0)
+		draw_rect(region_rect.grow(3.0 * completion_pulse), Color(0.72, 1.0, 0.45, 0.9 * completion_pulse), false, 3.0)
 	if dragging_piece != -1 and dragging_piece < pieces.size():
 		var origin := origin_at(drag_position)
 		for cell in pieces[dragging_piece].rotated_cells():
@@ -135,6 +178,9 @@ func _region_count(region: int) -> int:
 			if board[y][x] != EMPTY:
 				touched[board[y][x]] = true
 	return touched.size()
+
+func _is_completed_region(region: int) -> bool:
+	return region >= 0 and region < completed_regions.size() and completed_regions[region]
 
 func _panel_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
