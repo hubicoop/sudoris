@@ -72,14 +72,13 @@ var combo_deadline_ms := 0
 func _ready() -> void:
 	rng.randomize()
 	load_progress()
-	%ResetButton.pressed.connect(reset_puzzle)
-	%PauseButton.pressed.connect(show_pause_menu)
-	%ResumeButton.pressed.connect(hide_pause_menu)
-	%NewPuzzleButton.pressed.connect(new_puzzle)
-	%RestartButton.pressed.connect(reset_puzzle)
-	%HowToPlayButton.pressed.connect(hide_how_to)
-	%HowToPlayButton.gui_input.connect(_on_how_to_button_input)
-	%NextLevelButton.pressed.connect(next_level)
+	_connect_action_button(%ResetButton, reset_puzzle)
+	_connect_action_button(%PauseButton, show_pause_menu)
+	_connect_action_button(%ResumeButton, hide_pause_menu)
+	_connect_action_button(%NewPuzzleButton, new_puzzle)
+	_connect_action_button(%RestartButton, reset_puzzle)
+	_connect_action_button(%HowToPlayButton, hide_how_to)
+	_connect_action_button(%NextLevelButton, next_level)
 	tray_view.piece_picked.connect(start_drag)
 	tray_view.rotate_requested.connect(rotate_piece)
 	board_view.dropped.connect(drop_piece)
@@ -93,9 +92,17 @@ func _process(_delta: float) -> void:
 		combo = 0
 		refresh_views()
 
-func _on_how_to_button_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch and not event.pressed:
-		hide_how_to()
+func _connect_action_button(button: Button, action: Callable) -> void:
+	button.gui_input.connect(_on_action_button_input.bind(action))
+
+func _on_action_button_input(event: InputEvent, action: Callable) -> void:
+	var released := false
+	if event is InputEventScreenTouch:
+		released = not event.pressed
+	elif event is InputEventMouseButton:
+		released = event.button_index == MOUSE_BUTTON_LEFT and not event.pressed
+	if released:
+		action.call()
 		get_viewport().set_input_as_handled()
 
 func new_puzzle() -> void:
@@ -518,6 +525,10 @@ func check_failure() -> bool:
 		var count := region_count(region)
 		if count > targets[region]:
 			message = "Too many pieces touch a region."
+			show_game_over()
+			return true
+		if count == targets[region] and not region_is_full(region):
+			message = "A region reached its target before all squares were filled."
 			show_game_over()
 			return true
 		if region_is_full(region) and count < targets[region]:
