@@ -516,7 +516,11 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 		if active_slots[slot] == piece_id:
 			active_slots[slot] = take_next_piece()
 	message = "+%d points  /  Combo x%d" % [earned, combo]
-	board_view.animate_completed_regions(newly_completed)
+	var board_cells: Array[Vector2i] = []
+	for cell in placed_cells:
+		board_cells.append(origin + cell)
+	board_view.animate_completed_regions(newly_completed, board_cells)
+	board_view.animate_wave(new_completed_lines(completed_before_regions, completed_after_regions))
 	if check_failure():
 		return true
 	check_completion()
@@ -524,6 +528,21 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 		message = "No available piece can fit on the board."
 		show_game_over()
 	return true
+
+const REGION_LINES := [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8]]
+
+# Rows or columns of three regions that became fully completed with this move.
+func new_completed_lines(before: Array[int], after: Array[int]) -> Array:
+	var lines: Array = []
+	for line in REGION_LINES:
+		var done_after := true
+		var done_before := true
+		for region in line:
+			done_after = done_after and after.has(region)
+			done_before = done_before and before.has(region)
+		if done_after and not done_before:
+			lines.append(line)
+	return lines
 
 func completed_region_count() -> int:
 	var completed := 0

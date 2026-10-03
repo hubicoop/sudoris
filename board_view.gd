@@ -7,7 +7,12 @@ const BOARD_SIZE := 9
 const NO_ORIGIN := Vector2i(-100, -100)
 # How far (in cells) a piece may hang over the edge and still snap onto the board.
 const SNAP_TOLERANCE := 1.5
-const COMPLETION_DURATION := 0.95
+const COMPLETION_DURATION := 1.0
+# Share of the completion animation spent spreading green through the region;
+# the rings and sparkles play in the remainder.
+const SPREAD_END := 0.5
+const WAVE_DURATION := 0.85
+const COMPLETED_COLOR := Color("#5eaf4d")
 # Higher follows the finger more tightly; lower glides more.
 const DRAG_SMOOTHING := 32.0
 const LABEL_FONT := preload("res://fonts/Roboto-Bold.ttf")
@@ -30,8 +35,15 @@ var animated_cells: Array[Vector2i] = []
 var placement_offset := Vector2.ZERO
 var placement_tween: Tween
 var completion_regions: Array[int] = []
+# Cell -> 0..1 delay before it turns green, measured from the cells of the piece that
+# completed the region.
+var completion_delays := {}
 var completion_progress := 0.0
 var completion_tween: Tween
+# Cell -> 0..1 position along a row or column of three completed regions doing a wave.
+var wave_positions := {}
+var wave_progress := 0.0
+var wave_tween: Tween
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -107,10 +119,13 @@ func _finish_placement_animation() -> void:
 	placement_tween = null
 	queue_redraw()
 
-func animate_completed_regions(regions: Array[int]) -> void:
+func animate_completed_regions(regions: Array[int], source_cells: Array[Vector2i]) -> void:
 	if regions.is_empty():
 		return
 	completion_regions = regions.duplicate()
+	completion_delays.clear()
+	for region in regions:
+		_compute_spread_delays(region, source_cells)
 	completion_progress = 0.0
 	if completion_tween:
 		completion_tween.kill()
@@ -118,12 +133,78 @@ func animate_completed_regions(regions: Array[int]) -> void:
 	completion_tween.tween_method(_set_completion_progress, 0.0, 1.0, COMPLETION_DURATION)
 	completion_tween.finished.connect(_finish_completion_animation)
 
+func _compute_spread_delays(region: int, source_cells: Array[Vector2i]) -> void:
+	var start := Vector2i((region % 3) * 3, (region / 3) * 3)
+	var sources: Array[Vector2i] = []
+	for cell in source_cells:
+		if cell.x >= start.x and cell.x < start.x + 3 and cell.y >= start.y and cell.y < start.y + 3:
+			sources.append(cell)
+	if sources.is_empty():
+		sources.append(start + Vector2i.ONE)
+	var distances := {}
+	var farthest := 0.0
+	for y in range(start.y, start.y + 3):
+		for x in range(start.x, start.x + 3):
+			var cell := Vector2i(x, y)
+			var nearest := INF
+			for source in sources:
+				nearest = minf(nearest, Vector2(cell - source).length())
+			distances[cell] = nearest
+			farthest = maxf(farthest, nearest)
+	for cell in distances:
+		completion_delays[cell] = distances[cell] / farthest if farthest > 0.0 else 0.0
+
+# How far a cell has turned green: 0 = original colour, 1 = fully green.
+func _green_amount(cell: Vector2i) -> float:
+	if not completion_delays.has(cell):
+		return 1.0
+	var spread := completion_progress / SPREAD_END
+	return clampf((spread - completion_delays[cell] * 0.7) / 0.3, 0.0, 1.0)
+
+func animate_wave(lines: Array) -> void:
+	if lines.is_empty():
+		return
+	wave_positions.clear()
+	for line in lines:
+		var horizontal: bool = line[1] - line[0] == 1
+		for region in line:
+			var start := Vector2i((region % 3) * 3, (region / 3) * 3)
+			for y in range(start.y, start.y + 3):
+				for x in range(start.x, start.x + 3):
+					wave_positions[Vector2i(x, y)] = (x if horizontal else y) / float(BOARD_SIZE - 1)
+	wave_progress = 0.0
+	if wave_tween:
+		wave_tween.kill()
+	wave_tween = create_tween()
+	# Start once the green has finished spreading.
+	wave_tween.tween_interval(COMPLETION_DURATION * SPREAD_END)
+	wave_tween.tween_method(_set_wave_progress, 0.0, 1.0, WAVE_DURATION)
+	wave_tween.finished.connect(_finish_wave)
+
+func _set_wave_progress(value: float) -> void:
+	wave_progress = value
+	queue_redraw()
+
+func _finish_wave() -> void:
+	wave_positions.clear()
+	wave_progress = 0.0
+	wave_tween = null
+	queue_redraw()
+
+# 0..1 height of a cell in the wave; each cell rises and falls a little after the one before.
+func _wave_height(cell: Vector2i) -> float:
+	if not wave_positions.has(cell):
+		return 0.0
+	var local := clampf((wave_progress - wave_positions[cell] * 0.6) / 0.4, 0.0, 1.0)
+	return sin(PI * local)
+
 func _set_completion_progress(value: float) -> void:
 	completion_progress = value
 	queue_redraw()
 
 func _finish_completion_animation() -> void:
 	completion_regions.clear()
+	completion_delays.clear()
 	completion_progress = 0.0
 	completion_tween = null
 	queue_redraw()
@@ -181,46 +262,52 @@ func _fits(cells: Array[Vector2i], origin: Vector2i) -> bool:
 			return false
 	return true
 
-func _completion_pop(region: int) -> float:
-	if not completion_regions.has(region):
-		return 1.0
-	var t := clampf(completion_progress * 2.2, 0.0, 1.0)
-	return 1.0 + 0.22 * sin(PI * t)
-
 func _draw() -> void:
 	var rect := grid_rect()
 	var cs := rect.size.x / BOARD_SIZE
 	draw_style_box(_panel_style(), Rect2(Vector2.ZERO, size))
 	draw_rect(rect.grow(3.0), Color("#18200f"))
+	# Grid first, then pieces on top, so cells lifted by the wave are not crossed by grid lines.
+	for y in BOARD_SIZE:
+		for x in BOARD_SIZE:
+			var cell_rect := Rect2(rect.position + Vector2(x, y) * cs, Vector2.ONE * cs)
+			if board.is_empty() or board[y][x] == EMPTY:
+				draw_rect(cell_rect.grow(-1.5), Color("#eee8cf"))
+			draw_rect(cell_rect, Color("#a9a68d"), false, 1.0)
+	for line in [3, 6]:
+		draw_line(rect.position + Vector2(line * cs, 0), rect.position + Vector2(line * cs, rect.size.y), Color("#30391f"), 4.0)
+		draw_line(rect.position + Vector2(0, line * cs), rect.position + Vector2(rect.size.x, line * cs), Color("#30391f"), 4.0)
 	for y in BOARD_SIZE:
 		for x in BOARD_SIZE:
 			var cell_rect := Rect2(rect.position + Vector2(x, y) * cs, Vector2.ONE * cs)
 			var id := EMPTY
 			if not board.is_empty():
 				id = board[y][x]
+			if id == EMPTY or id >= pieces.size():
+				continue
 			var region := y / 3 * 3 + x / 3
-			var color := Color("#eee8cf")
-			if id != EMPTY and id < pieces.size():
-				color = pieces[id].color
-			if id != EMPTY and _is_completed_region(region):
-				color = Color("#5eaf4d")
+			var color: Color = pieces[id].color
+			var cell := Vector2i(x, y)
+			var cell_scale := 1.0
+			if _is_completed_region(region):
+				var green := _green_amount(cell)
+				color = color.lerp(COMPLETED_COLOR, green)
+				# Each cell pops briefly as the green reaches it.
+				if completion_delays.has(cell):
+					cell_scale += 0.2 * sin(PI * green)
 			var fill_rect := cell_rect.grow(-1.5)
-			var cell_scale := _completion_pop(region)
-			if animated_cells.has(Vector2i(x, y)):
+			var wave := _wave_height(cell)
+			if wave > 0.0:
+				fill_rect.position.y -= wave * cs * 0.3
+				cell_scale += 0.08 * wave
+			if animated_cells.has(cell):
 				fill_rect.position += placement_offset
 			if cell_scale != 1.0:
 				var half := fill_rect.size * cell_scale * 0.5
 				fill_rect = Rect2(fill_rect.get_center() - half, half * 2.0)
-			if id != EMPTY and id < pieces.size():
-				draw_rect(fill_rect, color.darkened(0.38))
-				draw_rect(fill_rect.grow(-2.4), color)
-				draw_line(fill_rect.position + Vector2(3, 3), Vector2(fill_rect.end.x - 3, fill_rect.position.y + 3), color.lightened(0.28), 1.2)
-			else:
-				draw_rect(fill_rect, color)
-			draw_rect(cell_rect, Color("#a9a68d"), false, 1.0)
-	for line in [3, 6]:
-		draw_line(rect.position + Vector2(line * cs, 0), rect.position + Vector2(line * cs, rect.size.y), Color("#30391f"), 4.0)
-		draw_line(rect.position + Vector2(0, line * cs), rect.position + Vector2(rect.size.x, line * cs), Color("#30391f"), 4.0)
+			draw_rect(fill_rect, color.darkened(0.38))
+			draw_rect(fill_rect.grow(-2.4), color)
+			draw_line(fill_rect.position + Vector2(3, 3), Vector2(fill_rect.end.x - 3, fill_rect.position.y + 3), color.lightened(0.28), 1.2)
 	_draw_drop_ghost(rect, cs)
 	if not targets.is_empty() and not board.is_empty():
 		for region in BOARD_SIZE:
@@ -260,12 +347,11 @@ func _draw_region_label(region_rect: Rect2, region: int) -> void:
 	draw_string(LABEL_FONT, baseline, label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color("#11180b"))
 
 func _draw_completion_effect(region_rect: Rect2, region: int) -> void:
-	var t := completion_progress
+	if completion_progress < SPREAD_END:
+		return
+	var t := (completion_progress - SPREAD_END) / (1.0 - SPREAD_END)
 	var fade := 1.0 - t
 	var center := region_rect.get_center()
-	# Bright flash that settles from white into green.
-	var flash := Color(1.0, 1.0, 0.85).lerp(Color(0.6, 1.0, 0.4), clampf(t * 3.0, 0.0, 1.0))
-	draw_rect(region_rect, Color(flash, 0.75 * pow(fade, 2.0)))
 	# Two shock rings expanding outward.
 	for ring in 2:
 		var ring_t := clampf(t * 1.4 - ring * 0.18, 0.0, 1.0)
@@ -285,14 +371,6 @@ func _draw_completion_effect(region_rect: Rect2, region: int) -> void:
 			continue
 		var color: Color = sparkle_colors[index % sparkle_colors.size()]
 		_draw_sparkle(point, radius, Color(color, fade))
-	# "CLEAR!" pops up and floats away.
-	var text_t := clampf(t * 1.6, 0.0, 1.0)
-	var text_alpha := clampf((1.0 - t) * 2.0, 0.0, 1.0)
-	var text_size := int(16 + 10 * sin(PI * minf(text_t * 1.4, 1.0)) + 6 * text_t)
-	var text := "CLEAR!"
-	var measured := LABEL_FONT.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, text_size)
-	var text_pos := center + Vector2(-measured.x * 0.5, -region_rect.size.y * (0.18 + 0.3 * t))
-	draw_string(LABEL_FONT, text_pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, text_size, Color(0.09, 0.19, 0.05, text_alpha))
 
 func _draw_sparkle(point: Vector2, radius: float, color: Color) -> void:
 	var points := PackedVector2Array()
