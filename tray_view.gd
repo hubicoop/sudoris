@@ -1,16 +1,32 @@
 @tool
 class_name SudorisTray
 extends Control
+## The three piece slots under the board. Colours and sprites come from the skin.
 
 signal piece_picked(piece_id: int, global_position: Vector2)
 signal rotate_requested(piece_id: int)
 
+## Colours, sprites and font. Use the same skin as the BoardView.
+@export var skin: SudorisSkin
+## Shows sample pieces in the editor.
+@export var editor_preview := true
+
 var pieces: Array = []
 var active_slots: Array[int] = [-1, -1, -1]
 var dragging_piece := -1
+var _default_skin := SudorisSkin.new()
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+
+func _process(_delta: float) -> void:
+	if Engine.is_editor_hint():
+		if editor_preview and pieces.is_empty():
+			_build_preview()
+		queue_redraw()
+
+func current_skin() -> SudorisSkin:
+	return skin if skin else _default_skin
 
 func configure(new_pieces: Array, new_slots: Array[int], new_dragging_piece := -1) -> void:
 	pieces = new_pieces
@@ -44,19 +60,22 @@ func _gui_input(event: InputEvent) -> void:
 		piece_picked.emit(piece_id, get_global_transform_with_canvas() * position)
 
 func _draw() -> void:
-	draw_style_box(_panel_style(), Rect2(Vector2.ZERO, size))
+	var look := current_skin()
+	var panel := look.rounded_box(look.tray_panel_color, 22, look.tray_border_color, 1)
+	panel.shadow_color = Color(0.05, 0.08, 0.02, 0.35)
+	panel.shadow_size = 7
+	panel.shadow_offset = Vector2(0, 4)
+	draw_style_box(panel, Rect2(Vector2.ZERO, size))
 	var slot_width := size.x / 3.0
 	for slot in 3:
 		var center_x := slot_width * (slot + 0.5)
 		var id := active_slots[slot]
 		var card := _card_rect(slot, slot_width)
 		var rotate_rect := _rotate_rect(card)
-		var rotate_center := rotate_rect.get_center()
-		draw_style_box(_slot_style(id != -1), card)
-		draw_style_box(_rotate_style(), rotate_rect)
-		draw_arc(rotate_center, 12, -2.4, 1.6, 24, Color("#c4d578"), 2.8, true)
-		draw_line(rotate_center + Vector2(-8, -8), rotate_center + Vector2(-14, -2), Color("#c4d578"), 2.8)
-		draw_line(rotate_center + Vector2(-8, -8), rotate_center + Vector2(0, -6), Color("#c4d578"), 2.8)
+		var border := look.slot_border_active_color if id != -1 else look.slot_border_empty_color
+		draw_style_box(look.rounded_box(look.slot_color, 14, border, 1), card)
+		draw_style_box(look.rounded_box(look.rotate_button_color, 10, look.rotate_button_border_color, 1), rotate_rect)
+		_draw_rotate_icon(look, rotate_rect.get_center())
 		if id == -1 or id >= pieces.size():
 			continue
 		var cells: Array[Vector2i] = pieces[id].rotated_cells()
@@ -67,7 +86,7 @@ func _draw() -> void:
 		for cell in cells:
 			max_x = max(max_x, cell.x)
 			max_y = max(max_y, cell.y)
-		var unit := 28.0
+		var unit := look.tray_block_size
 		var piece_area_bottom := rotate_rect.position.y - 4.0
 		var piece_center_y := card.position.y + (piece_area_bottom - card.position.y) * 0.5
 		var start := Vector2(center_x - (max_x + 1) * unit * 0.5, piece_center_y - (max_y + 1) * unit * 0.5)
@@ -76,9 +95,16 @@ func _draw() -> void:
 			if held:
 				draw_rect(cell_rect.grow(-1.5), Color(pieces[id].color, 0.35), false, 1.5)
 				continue
-			draw_rect(cell_rect.grow(-0.8), pieces[id].color.darkened(0.42))
-			draw_rect(cell_rect.grow(-2.6), pieces[id].color)
-			draw_line(cell_rect.position + Vector2(3, 3), Vector2(cell_rect.end.x - 3, cell_rect.position.y + 3), pieces[id].color.lightened(0.3), 1.0)
+			look.draw_block(self, cell_rect.grow(-0.8), pieces[id].color)
+
+func _draw_rotate_icon(look: SudorisSkin, center: Vector2) -> void:
+	if look.rotate_icon:
+		var half := Vector2.ONE * 14.0
+		draw_texture_rect(look.rotate_icon, Rect2(center - half, half * 2.0), false, look.rotate_icon_color)
+		return
+	draw_arc(center, 12, -2.4, 1.6, 24, look.rotate_icon_color, 2.8, true)
+	draw_line(center + Vector2(-8, -8), center + Vector2(-14, -2), look.rotate_icon_color, 2.8)
+	draw_line(center + Vector2(-8, -8), center + Vector2(0, -6), look.rotate_icon_color, 2.8)
 
 func _card_rect(slot: int, slot_width: float) -> Rect2:
 	return Rect2(slot * slot_width + 10, 8, slot_width - 20, size.y - 16)
@@ -86,38 +112,21 @@ func _card_rect(slot: int, slot_width: float) -> Rect2:
 func _rotate_rect(card: Rect2) -> Rect2:
 	return Rect2(Vector2(card.position.x + 6, card.end.y - 47), Vector2(card.size.x - 12, 41))
 
-func _rotate_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#33431d")
-	style.border_color = Color("#708d3c")
-	style.set_border_width_all(1)
-	style.corner_radius_top_left = 10
-	style.corner_radius_top_right = 10
-	style.corner_radius_bottom_left = 10
-	style.corner_radius_bottom_right = 10
-	return style
+# --- Editor preview -------------------------------------------------------------
 
-func _slot_style(active: bool) -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#18200f")
-	style.border_color = Color("#829b45") if active else Color("#303b20")
-	style.set_border_width_all(1)
-	style.corner_radius_top_left = 14
-	style.corner_radius_top_right = 14
-	style.corner_radius_bottom_left = 14
-	style.corner_radius_bottom_right = 14
-	return style
+class PreviewPiece:
+	var color: Color
+	var cells: Array[Vector2i]
+	func _init(new_color: Color, new_cells: Array[Vector2i]) -> void:
+		color = new_color
+		cells = new_cells
+	func rotated_cells() -> Array[Vector2i]:
+		return cells
 
-func _panel_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color("#273417")
-	style.border_color = Color("#4d5e29")
-	style.set_border_width_all(1)
-	style.corner_radius_top_left = 22
-	style.corner_radius_top_right = 22
-	style.corner_radius_bottom_left = 22
-	style.corner_radius_bottom_right = 22
-	style.shadow_color = Color(0.05, 0.08, 0.02, 0.35)
-	style.shadow_size = 7
-	style.shadow_offset = Vector2(0, 4)
-	return style
+func _build_preview() -> void:
+	pieces = [
+		PreviewPiece.new(Color("#ef5d50"), [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)] as Array[Vector2i]),
+		PreviewPiece.new(Color("#e46aa8"), [Vector2i(0, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(1, 2)] as Array[Vector2i]),
+		PreviewPiece.new(Color("#4ec982"), [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(1, 1)] as Array[Vector2i]),
+	]
+	active_slots = [0, 1, 2]

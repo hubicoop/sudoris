@@ -23,23 +23,23 @@ jobs:
         id: templates
         uses: actions/cache@v4
         with:
-          path: ~/.local/share/godot/export_templates/4.6.2.stable
-          key: godot-4.6.2-web-templates
-      - name: Install Godot 4.6.2
+          path: ~/.local/share/godot/export_templates/4.7.2.stable
+          key: godot-4.7.2-web-templates
+      - name: Install Godot 4.7.2
         run: |
-          curl --fail --location --output godot.zip https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_linux.x86_64.zip
+          curl --fail --location --output godot.zip https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_linux.x86_64.zip
           unzip -q godot.zip -d "$HOME/godot"
-          chmod +x "$HOME/godot/Godot_v4.6.2-stable_linux.x86_64"
+          chmod +x "$HOME/godot/Godot_v4.7.2-stable_linux.x86_64"
       - name: Install Web templates
         if: steps.templates.outputs.cache-hit != 'true'
         run: |
-          mkdir -p "$HOME/.local/share/godot/export_templates/4.6.2.stable"
-          curl --fail --location --output templates.tpz https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_export_templates.tpz
-          unzip -q -j templates.tpz "templates/web*.zip" -d "$HOME/.local/share/godot/export_templates/4.6.2.stable"
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.7.2.stable"
+          curl --fail --location --output templates.tpz https://github.com/godotengine/godot/releases/download/4.7.2-stable/Godot_v4.7.2-stable_export_templates.tpz
+          unzip -q -j templates.tpz "templates/web*.zip" -d "$HOME/.local/share/godot/export_templates/4.7.2.stable"
       - name: Export web build
         run: |
           mkdir -p build/web
-          "$HOME/godot/Godot_v4.6.2-stable_linux.x86_64" --headless --path . --export-release "Web" "build/web/sudoris-${GITHUB_SHA}.html"
+          "$HOME/godot/Godot_v4.7.2-stable_linux.x86_64" --headless --path . --export-release "Web" "build/web/sudoris-${GITHUB_SHA}.html"
           mv "build/web/sudoris-${GITHUB_SHA}.html" build/web/index.html
       - uses: actions/upload-pages-artifact@v3
         with:

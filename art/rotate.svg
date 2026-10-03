@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Drawn in white; the game tints it with the skin's Rotate Icon Color. -->
+  <path d="M46 20 A18 18 0 1 0 50 34" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M38 8 L50 20 L36 26" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -4,7 +4,23 @@ const BOARD_SIZE := 9
 const REGION_SIZE := 3
 const EMPTY := -1
 const SAVE_PATH := "user://progress.cfg"
-const PALETTE := [Color("#ef5d50"), Color("#f59f45"), Color("#f2d35e"), Color("#4ec982"), Color("#30b8b0"), Color("#49a5e6"), Color("#8b78e6"), Color("#e46aa8")]
+
+## Piece colours, used in order. Select the root "Sudoris" node to edit them.
+@export var palette: Array[Color] = [Color("#ef5d50"), Color("#f59f45"), Color("#f2d35e"), Color("#4ec982"), Color("#30b8b0"), Color("#49a5e6"), Color("#8b78e6"), Color("#e46aa8")]
+
+@export_group("Scoring")
+## Points for each square of a placed piece (before multipliers).
+@export var points_per_square := 7
+## Each region completed by one move multiplies the points by this, again per region.
+@export var region_multiplier := 5
+## Milliseconds the next move has to keep the combo going.
+@export var combo_window_ms := 1500
+
+@export_group("Drag")
+## Minimum height (in cells) of the dragged piece above the finger.
+@export_range(0.5, 4.0, 0.05) var min_drag_lift := 1.65
+## Extra gap (in cells) between the finger and the bottom of a tall piece.
+@export_range(0.0, 3.0, 0.05) var drag_lift_margin := 1.25
 
 class PuzzlePiece:
 	var cells: Array[Vector2i]
@@ -96,7 +112,7 @@ func _ready() -> void:
 	drag_layer.draw.connect(func() -> void: board_view.draw_floating(drag_layer))
 	board_view.floating_layer = drag_layer
 	new_puzzle()
-	how_to_modal.visible = true
+	open_modal(how_to_modal)
 	how_to_modal.move_to_front()
 
 func _process(_delta: float) -> void:
@@ -210,8 +226,8 @@ func build_solution_from_catalog() -> void:
 			candidates.append_array(placement_candidates(anchor, true))
 		var placement: Placement = candidates[rng.randi_range(0, candidates.size() - 1)]
 		var piece_id := pieces.size()
-		var palette_cycle: int = int(piece_id / PALETTE.size())
-		var piece_color: Color = PALETTE[piece_id % PALETTE.size()].lightened(palette_cycle * 0.08)
+		var palette_cycle: int = int(piece_id / palette.size())
+		var piece_color: Color = palette[piece_id % palette.size()].lightened(palette_cycle * 0.08)
 		pieces.append(PuzzlePiece.new(placement.local_cells, placement.board_cells, piece_color))
 		for cell in placement.board_cells:
 			board[cell.y][cell.x] = piece_id
@@ -357,7 +373,7 @@ func create_extra_piece() -> int:
 				largest_size = maxi(largest_size, cells.size())
 	if fitting_shapes.is_empty():
 		var fallback: Array[Vector2i] = [Vector2i.ZERO]
-		var fallback_color: Color = PALETTE[pieces.size() % PALETTE.size()]
+		var fallback_color: Color = palette[pieces.size() % palette.size()]
 		pieces.append(PuzzlePiece.new(fallback, [], fallback_color))
 		return pieces.size() - 1
 	var chosen: Array[Vector2i] = fitting_shapes[rng.randi_range(0, fitting_shapes.size() - 1)]
@@ -369,7 +385,7 @@ func create_extra_piece() -> int:
 				largest.append(candidate)
 		if not largest.is_empty():
 			chosen = largest[rng.randi_range(0, largest.size() - 1)]
-	var piece_color: Color = PALETTE[pieces.size() % PALETTE.size()]
+	var piece_color: Color = palette[pieces.size() % palette.size()]
 	pieces.append(PuzzlePiece.new(chosen.duplicate(), [], piece_color))
 	return pieces.size() - 1
 
@@ -409,7 +425,7 @@ func update_drag_lift() -> void:
 	var max_y := 0
 	for cell in pieces[dragging_piece].rotated_cells():
 		max_y = maxi(max_y, cell.y)
-	board_view.set_drag_lift(maxf(1.65, max_y + 1.25))
+	board_view.set_drag_lift(maxf(min_drag_lift, max_y + drag_lift_margin))
 
 func rotate_piece(piece_id: int) -> void:
 	var now := Time.get_ticks_msec()
@@ -500,7 +516,7 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 	if Time.get_ticks_msec() > combo_deadline_ms:
 		combo = 0
 	combo += 1
-	combo_deadline_ms = Time.get_ticks_msec() + 1500
+	combo_deadline_ms = Time.get_ticks_msec() + combo_window_ms
 	var completed_regions := completed_region_count() - completed_before
 	var completed_after_regions := completed_regions_list()
 	var newly_completed: Array[int] = []
@@ -509,8 +525,8 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 			newly_completed.append(region)
 	var multiplier := combo
 	if completed_regions > 0:
-		multiplier *= int(pow(5, completed_regions))
-	var earned := placed_cells.size() * 7 * multiplier
+		multiplier *= int(pow(region_multiplier, completed_regions))
+	var earned := placed_cells.size() * points_per_square * multiplier
 	score += earned
 	for slot in active_slots.size():
 		if active_slots[slot] == piece_id:
@@ -612,8 +628,17 @@ func region_count(region: int) -> int:
 				touched[board[y][x]] = true
 	return touched.size()
 
+# Shows a modal and plays the "open" animation of its Animator (an AnimationPlayer
+# child), which can be edited in the Animation panel.
+func open_modal(modal: Control) -> void:
+	modal.visible = true
+	var animator := modal.get_node_or_null("Animator") as AnimationPlayer
+	if animator and animator.has_animation("open"):
+		animator.stop()
+		animator.play("open")
+
 func show_pause_menu() -> void:
-	pause_modal.visible = true
+	open_modal(pause_modal)
 
 func hide_pause_menu() -> void:
 	pause_modal.visible = false
@@ -623,7 +648,7 @@ func show_game_over() -> void:
 	level = 1
 	save_progress()
 	game_over_reason.text = message + "\nBack to level 1."
-	game_over_modal.visible = true
+	open_modal(game_over_modal)
 
 func hide_game_over() -> void:
 	game_over_modal.visible = false
@@ -632,7 +657,7 @@ func hide_how_to() -> void:
 	how_to_modal.visible = false
 
 func show_win() -> void:
-	win_modal.visible = true
+	open_modal(win_modal)
 
 func hide_win() -> void:
 	win_modal.visible = false

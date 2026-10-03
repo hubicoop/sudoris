@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="SudorisSkin" format=3]
+
+[ext_resource type="Texture2D" path="res://art/block.png" id="1_xms0t"]
+[ext_resource type="FontFile" path="res://fonts/Roboto-Bold.ttf" id="2_s8xma"]
+[ext_resource type="Texture2D" path="res://art/rotate.svg" id="3_kms56"]
+[ext_resource type="Script" path="res://skin.gd" id="4_upan1"]
+[ext_resource type="Texture2D" path="res://art/sparkle.png" id="5_du1yh"]
+
+[resource]
+script = ExtResource("4_upan1")
+block_texture = ExtResource("1_xms0t")
+rotate_icon = ExtResource("3_kms56")
+sparkle_texture = ExtResource("5_du1yh")
+label_font = ExtResource("2_s8xma")
