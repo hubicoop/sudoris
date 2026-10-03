@@ -7,13 +7,15 @@ signal rotate_requested(piece_id: int)
 
 var pieces: Array = []
 var active_slots: Array[int] = [-1, -1, -1]
+var dragging_piece := -1
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 
-func configure(new_pieces: Array, new_slots: Array[int]) -> void:
+func configure(new_pieces: Array, new_slots: Array[int], new_dragging_piece := -1) -> void:
 	pieces = new_pieces
 	active_slots = new_slots
+	dragging_piece = new_dragging_piece
 	queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
@@ -58,6 +60,8 @@ func _draw() -> void:
 		if id == -1 or id >= pieces.size():
 			continue
 		var cells: Array[Vector2i] = pieces[id].rotated_cells()
+		# The held piece leaves only a faint outline behind in its slot.
+		var held := id == dragging_piece
 		var max_x := 0
 		var max_y := 0
 		for cell in cells:
@@ -69,6 +73,9 @@ func _draw() -> void:
 		var start := Vector2(center_x - (max_x + 1) * unit * 0.5, piece_center_y - (max_y + 1) * unit * 0.5)
 		for cell in cells:
 			var cell_rect := Rect2(start + Vector2(cell) * unit, Vector2.ONE * unit)
+			if held:
+				draw_rect(cell_rect.grow(-1.5), Color(pieces[id].color, 0.35), false, 1.5)
+				continue
 			draw_rect(cell_rect.grow(-0.8), pieces[id].color.darkened(0.42))
 			draw_rect(cell_rect.grow(-2.6), pieces[id].color)
 			draw_line(cell_rect.position + Vector2(3, 3), Vector2(cell_rect.end.x - 3, cell_rect.position.y + 3), pieces[id].color.lightened(0.3), 1.0)

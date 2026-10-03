@@ -64,6 +64,9 @@ var dragging_piece := -1
 var drag_position := Vector2.ZERO
 var message := "Fill every square. Match the region counts."
 var last_rotation_ms := -1000
+var last_action_ms := -1000
+var solution_piece_count := 0
+var drag_layer: Control
 var level := 1
 var score := 0
 var combo := 0
@@ -76,13 +79,22 @@ func _ready() -> void:
 	_connect_action_button(%PauseButton, show_pause_menu)
 	_connect_action_button(%ResumeButton, hide_pause_menu)
 	_connect_action_button(%NewPuzzleButton, new_puzzle)
-	_connect_action_button(%RestartButton, reset_puzzle)
+	_connect_action_button(%RestartButton, new_puzzle)
 	_connect_action_button(%HowToPlayButton, hide_how_to)
 	_connect_action_button(%NextLevelButton, next_level)
 	tray_view.piece_picked.connect(start_drag)
 	tray_view.rotate_requested.connect(rotate_piece)
 	board_view.dropped.connect(drop_piece)
 	board_view.drag_moved.connect(move_drag)
+	# Holds the piece that follows the finger; sits above the tray but below the modals.
+	drag_layer = Control.new()
+	drag_layer.name = "DragLayer"
+	drag_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	drag_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(drag_layer)
+	move_child(drag_layer, $Margin.get_index() + 1)
+	drag_layer.draw.connect(func() -> void: board_view.draw_floating(drag_layer))
+	board_view.floating_layer = drag_layer
 	new_puzzle()
 	how_to_modal.visible = true
 	how_to_modal.move_to_front()
@@ -102,8 +114,14 @@ func _on_action_button_input(event: InputEvent, action: Callable) -> void:
 	elif event is InputEventMouseButton:
 		released = event.button_index == MOUSE_BUTTON_LEFT and not event.pressed
 	if released:
-		action.call()
 		get_viewport().set_input_as_handled()
+		# Mouse clicks also emit an emulated touch (emulate_touch_from_mouse), so one
+		# click arrives twice. Run the action once per tap.
+		var now := Time.get_ticks_msec()
+		if now - last_action_ms < 250:
+			return
+		last_action_ms = now
+		action.call()
 
 func new_puzzle() -> void:
 	draw_order.clear()
@@ -117,6 +135,7 @@ func new_puzzle() -> void:
 			break
 	if not valid_puzzle:
 		push_warning("Could not generate every requested target after 160 attempts; using the closest valid puzzle.")
+	solution_piece_count = pieces.size()
 	for y in BOARD_SIZE:
 		for x in BOARD_SIZE:
 			board[y][x] = EMPTY
@@ -285,6 +304,8 @@ func reset_puzzle() -> void:
 	for y in BOARD_SIZE:
 		for x in BOARD_SIZE:
 			board[y][x] = EMPTY
+	# Drop extra pieces generated during the previous attempt.
+	pieces.resize(solution_piece_count)
 	for piece in pieces:
 		piece.rotation = 0
 	next_piece = 0
@@ -378,6 +399,7 @@ func has_available_move() -> bool:
 func start_drag(piece_id: int, global_position: Vector2) -> void:
 	dragging_piece = piece_id
 	drag_position = board_local_position(global_position)
+	board_view.begin_drag(drag_position)
 	update_drag_lift()
 	refresh_views()
 
@@ -404,8 +426,13 @@ func rotate_piece(piece_id: int) -> void:
 func move_drag(position: Vector2) -> void:
 	if dragging_piece == -1:
 		return
+	update_drag_position(position)
+
+func update_drag_position(position: Vector2) -> void:
+	# Only redraw the board and the floating piece; a full refresh per motion event is too slow.
 	drag_position = position
-	refresh_views()
+	board_view.update_drag(drag_position)
+	drag_layer.queue_redraw()
 
 func board_local_position(global_position: Vector2) -> Vector2:
 	return board_view.get_global_transform_with_canvas().affine_inverse() * global_position
@@ -414,6 +441,12 @@ func drop_piece(origin: Vector2i) -> void:
 	if dragging_piece == -1:
 		return
 	var piece_id := dragging_piece
+	if origin == SudorisBoard.NO_ORIGIN:
+		# Released away from the board: return the piece to the tray quietly.
+		dragging_piece = -1
+		refresh_views()
+		return
+	var from_offset := board_view.settle_offset(origin)
 	var placed := place_piece(piece_id, origin)
 	dragging_piece = -1
 	refresh_views()
@@ -421,7 +454,7 @@ func drop_piece(origin: Vector2i) -> void:
 		var placed_cells: Array[Vector2i] = []
 		for cell in pieces[piece_id].rotated_cells():
 			placed_cells.append(origin + cell)
-		board_view.animate_placement(placed_cells)
+		board_view.animate_placement(placed_cells, from_offset)
 
 func _input(event: InputEvent) -> void:
 	if how_to_modal.visible or game_over_modal.visible or win_modal.visible or dragging_piece == -1:
@@ -433,17 +466,21 @@ func _input(event: InputEvent) -> void:
 		position = event.position
 		moving = true
 	elif event is InputEventScreenDrag:
+		# Only the first finger drags; a second finger must not move or drop the piece.
+		if event.index != 0:
+			return
 		position = event.position
 		moving = true
 	elif event is InputEventMouseButton:
 		position = event.position
 		released = event.button_index == MOUSE_BUTTON_LEFT and not event.pressed
 	elif event is InputEventScreenTouch:
+		if event.index != 0:
+			return
 		position = event.position
 		released = not event.pressed
 	if moving:
-		drag_position = board_local_position(position)
-		refresh_views()
+		update_drag_position(board_local_position(position))
 	elif released:
 		var local_position: Vector2 = board_local_position(position)
 		# Place using the lifted block preview, not the finger's physical position.
@@ -563,7 +600,10 @@ func hide_pause_menu() -> void:
 	pause_modal.visible = false
 
 func show_game_over() -> void:
-	game_over_reason.text = message
+	# Failing a puzzle sends the player back to the first level.
+	level = 1
+	save_progress()
+	game_over_reason.text = message + "\nBack to level 1."
 	game_over_modal.visible = true
 
 func hide_game_over() -> void:
@@ -579,6 +619,8 @@ func hide_win() -> void:
 	win_modal.visible = false
 
 func next_level() -> void:
+	if not win_modal.visible:
+		return
 	level += 1
 	save_progress()
 	new_puzzle()
@@ -606,4 +648,5 @@ func refresh_views() -> void:
 	for region in completed_regions_list():
 		completed_flags[region] = true
 	board_view.set_completed_regions(completed_flags)
-	tray_view.configure(pieces, active_slots)
+	tray_view.configure(pieces, active_slots, dragging_piece)
+	drag_layer.queue_redraw()

@@ -3,7 +3,7 @@
 [ext_resource type="Script" path="res://main.gd" id="1_main"]
 [ext_resource type="Script" path="res://board_view.gd" id="2_board"]
 [ext_resource type="Script" path="res://tray_view.gd" id="3_tray"]
-[ext_resource type="FontFile" path="res://fonts/Xolonium-Regular.ttf" id="4_font"]
+[ext_resource type="FontFile" path="res://fonts/Roboto-Medium.ttf" id="4_font"]
 
 [sub_resource type="StyleBoxFlat" id="StylePanel"]
 bg_color = Color(0.929412, 0.913725, 0.815686, 1)
