@@ -16,6 +16,16 @@ const SAVE_PATH := "user://progress.cfg"
 ## Milliseconds the next move has to keep the combo going.
 @export var combo_window_ms := 1500
 
+@export_group("Level Help")
+## Levels up to and including this one deal helpful pieces. 0 turns the help off.
+@export var help_max_level := 1
+## Completed regions needed before helpful pieces start to appear.
+@export_range(0, 9) var help_after_regions := 5
+## Chance that a refilled tray slot gets a piece that can complete a region.
+## Only used while no piece in the tray can already complete one, so at most
+## one slot is helped at a time and the player can still lose.
+@export_range(0.0, 1.0, 0.05) var help_chance := 0.6
+
 @export_group("Drag")
 ## Minimum height (in cells) of the dragged piece above the finger.
 @export_range(0.5, 4.0, 0.05) var min_drag_lift := 1.65
@@ -337,6 +347,10 @@ func reset_puzzle() -> void:
 	refresh_views()
 
 func take_next_piece() -> int:
+	if help_is_active() and rng.randf() < help_chance and not tray_can_complete_region():
+		var helpful := take_helpful_piece()
+		if helpful != -1:
+			return helpful
 	if next_piece >= draw_order.size():
 		return create_extra_piece()
 	var fitting_large: Array[int] = []
@@ -358,6 +372,76 @@ func take_next_piece() -> int:
 	draw_order[next_piece] = id
 	next_piece += 1
 	return id
+
+func help_is_active() -> bool:
+	return level <= help_max_level and completed_region_count() >= help_after_regions
+
+func tray_can_complete_region() -> bool:
+	for piece_id in active_slots:
+		if piece_id != -1 and cells_can_complete_region(pieces[piece_id].cells):
+			return true
+	return false
+
+# Deals a piece that can finish a region without breaking any rule: an undrawn
+# solution piece if one works, otherwise a fresh catalog shape. Returns -1 if none can.
+func take_helpful_piece() -> int:
+	var helpful: Array[int] = []
+	for index in range(next_piece, draw_order.size()):
+		if cells_can_complete_region(pieces[draw_order[index]].cells):
+			helpful.append(index)
+	if not helpful.is_empty():
+		var chosen_index := helpful[rng.randi_range(0, helpful.size() - 1)]
+		var id: int = draw_order[chosen_index]
+		draw_order[chosen_index] = draw_order[next_piece]
+		draw_order[next_piece] = id
+		next_piece += 1
+		return id
+	var helpful_shapes: Array = []
+	for base_shape in shape_catalog():
+		var typed_shape: Array[Vector2i] = []
+		typed_shape.assign(base_shape)
+		if cells_can_complete_region(typed_shape):
+			helpful_shapes.append(typed_shape)
+	if helpful_shapes.is_empty():
+		return -1
+	var chosen: Array[Vector2i] = helpful_shapes[rng.randi_range(0, helpful_shapes.size() - 1)]
+	var no_solution: Array[Vector2i] = []
+	pieces.append(PuzzlePiece.new(chosen.duplicate(), no_solution, palette[pieces.size() % palette.size()]))
+	return pieces.size() - 1
+
+# True if some rotation and position of these cells completes a region and
+# leaves every region it touches within the rules.
+func cells_can_complete_region(base_cells: Array[Vector2i]) -> bool:
+	const PROBE := -2
+	for orientation in unique_orientations(base_cells):
+		for y in BOARD_SIZE:
+			for x in BOARD_SIZE:
+				var placed: Array[Vector2i] = []
+				for cell in orientation:
+					var target: Vector2i = Vector2i(x, y) + cell
+					if target.x >= BOARD_SIZE or target.y >= BOARD_SIZE or board[target.y][target.x] != EMPTY:
+						placed.clear()
+						break
+					placed.append(target)
+				if placed.is_empty():
+					continue
+				var touched := {}
+				for target in placed:
+					board[target.y][target.x] = PROBE
+					touched[int(target.y / REGION_SIZE) * 3 + int(target.x / REGION_SIZE)] = true
+				var safe := true
+				var completes := false
+				for region in touched:
+					if region_failure(region) != "":
+						safe = false
+						break
+					if region_is_full(region):
+						completes = true
+				for target in placed:
+					board[target.y][target.x] = EMPTY
+				if safe and completes:
+					return true
+	return false
 
 func create_extra_piece() -> int:
 	var fitting_shapes: Array = []
@@ -438,6 +522,7 @@ func rotate_piece(piece_id: int) -> void:
 	if dragging_piece == piece_id:
 		update_drag_lift()
 	refresh_views()
+	tray_view.animate_rotation(piece_id)
 
 func move_drag(position: Vector2) -> void:
 	if dragging_piece == -1:
@@ -530,6 +615,8 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 	score += earned
 	for slot in active_slots.size():
 		if active_slots[slot] == piece_id:
+			# Clear the slot first so the placed piece is not counted as still in the tray.
+			active_slots[slot] = -1
 			active_slots[slot] = take_next_piece()
 	message = "+%d points  /  Combo x%d" % [earned, combo]
 	var board_cells: Array[Vector2i] = []
@@ -594,20 +681,23 @@ func check_completion() -> void:
 
 func check_failure() -> bool:
 	for region in BOARD_SIZE:
-		var count := region_count(region)
-		if count > targets[region]:
-			message = "Too many pieces touch a region."
-			show_game_over()
-			return true
-		if count == targets[region] and not region_is_full(region):
-			message = "A region reached its target before all squares were filled."
-			show_game_over()
-			return true
-		if region_is_full(region) and count < targets[region]:
-			message = "A full region does not have enough pieces."
+		var failure := region_failure(region)
+		if failure != "":
+			message = failure
 			show_game_over()
 			return true
 	return false
+
+# Why this region breaks the rules, or "" if it is fine.
+func region_failure(region: int) -> String:
+	var count := region_count(region)
+	if count > targets[region]:
+		return "Too many pieces touch a region."
+	if count == targets[region] and not region_is_full(region):
+		return "A region reached its target before all squares were filled."
+	if region_is_full(region) and count < targets[region]:
+		return "A full region does not have enough pieces."
+	return ""
 
 func region_is_full(region: int) -> bool:
 	var start_x := (region % 3) * 3

@@ -18,9 +18,11 @@ Proje **Godot 4.7.2** ile açılır:
 | Parıltı görseli | `art/sparkle.png` |
 | Boş kare görseli | Skin → Sprites → Empty Cell Texture (şu an boş, düz renk) |
 | Sürükleme hissi, kenara yapışma | `BoardView` node'u → Inspector → **Drag** |
+| Döndürme animasyonunun süresi | `TrayView` node'u → Inspector → **Rotate Duration** (saniye, 0 = anında döner) |
 | Bölge tamamlanma animasyonu | `BoardView` → **Region Clear** |
 | Üçlü sıra dalgası | `BoardView` → **Line Wave** |
 | Parça renkleri, puanlama, combo süresi | Kök `Sudoris` node'u → Inspector |
+| İlk bölüm yardımı (kaç bölgeden sonra, hangi seviyeye kadar, ne sıklıkla) | Kök `Sudoris` node'u → Inspector → **Level Help** |
 | Pencerelerin açılış animasyonu | `PauseModal`, `WinModal`, `GameOverModal`, `HowToModal` altındaki `Animator` → Animation panelinde `open` |
 | Menü yazıları, butonlar, pencere düzeni | `main.tscn` içindeki node'lar (Label, Button vb.) |
 | Oyun kuralları, parça şekilleri, zorluk | `main.gd` → `shape_catalog()`, `maximum_region_target()` |

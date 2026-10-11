@@ -10,11 +10,17 @@ signal rotate_requested(piece_id: int)
 @export var skin: SudorisSkin
 ## Shows sample pieces in the editor.
 @export var editor_preview := true
+## Seconds a piece takes to turn when its rotate button is pressed. 0 = instant.
+@export_range(0.0, 0.5, 0.01) var rotate_duration := 0.15
 
 var pieces: Array = []
 var active_slots: Array[int] = [-1, -1, -1]
 var dragging_piece := -1
 var _default_skin := SudorisSkin.new()
+# Piece id -> extra angle (radians) still to turn. The piece's cells already hold
+# the new rotation, so the angle starts at -90 degrees and eases back to zero.
+var rotation_offsets := {}
+var rotation_tweens := {}
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -32,6 +38,35 @@ func configure(new_pieces: Array, new_slots: Array[int], new_dragging_piece := -
 	pieces = new_pieces
 	active_slots = new_slots
 	dragging_piece = new_dragging_piece
+	for id in rotation_offsets.keys():
+		if not active_slots.has(id):
+			_stop_rotation(id)
+	queue_redraw()
+
+## Plays the quarter turn of a piece whose rotation was just increased by one.
+## Presses during a turn add another quarter, so the piece always ends upright.
+func animate_rotation(piece_id: int) -> void:
+	if rotate_duration <= 0.0:
+		_stop_rotation(piece_id)
+		return
+	if rotation_tweens.has(piece_id):
+		rotation_tweens[piece_id].kill()
+	var start: float = rotation_offsets.get(piece_id, 0.0) - PI * 0.5
+	rotation_offsets[piece_id] = start
+	var tween := create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_method(_set_rotation_offset.bind(piece_id), start, 0.0, rotate_duration)
+	tween.finished.connect(_stop_rotation.bind(piece_id))
+	rotation_tweens[piece_id] = tween
+
+func _set_rotation_offset(value: float, piece_id: int) -> void:
+	rotation_offsets[piece_id] = value
+	queue_redraw()
+
+func _stop_rotation(piece_id: int) -> void:
+	if rotation_tweens.has(piece_id):
+		rotation_tweens[piece_id].kill()
+	rotation_tweens.erase(piece_id)
+	rotation_offsets.erase(piece_id)
 	queue_redraw()
 
 func _gui_input(event: InputEvent) -> void:
@@ -89,13 +124,16 @@ func _draw() -> void:
 		var unit := look.tray_block_size
 		var piece_area_bottom := rotate_rect.position.y - 4.0
 		var piece_center_y := card.position.y + (piece_area_bottom - card.position.y) * 0.5
-		var start := Vector2(center_x - (max_x + 1) * unit * 0.5, piece_center_y - (max_y + 1) * unit * 0.5)
+		# Cells are drawn around the piece centre so a turn spins it in place.
+		var start := -Vector2(max_x + 1, max_y + 1) * unit * 0.5
+		draw_set_transform(Vector2(center_x, piece_center_y), rotation_offsets.get(id, 0.0))
 		for cell in cells:
 			var cell_rect := Rect2(start + Vector2(cell) * unit, Vector2.ONE * unit)
 			if held:
 				draw_rect(cell_rect.grow(-1.5), Color(pieces[id].color, 0.35), false, 1.5)
 				continue
 			look.draw_block(self, cell_rect.grow(-0.8), pieces[id].color)
+		draw_set_transform(Vector2.ZERO)
 
 func _draw_rotate_icon(look: SudorisSkin, center: Vector2) -> void:
 	if look.rotate_icon:
