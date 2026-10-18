@@ -23,6 +23,7 @@ Proje **Godot 4.7.2** ile açılır:
 | Üçlü sıra dalgası | `BoardView` → **Line Wave** |
 | Parça renkleri, puanlama, combo süresi | Kök `Sudoris` node'u → Inspector |
 | İlk bölüm yardımı (kaç bölgeden sonra, hangi seviyeye kadar, ne sıklıkla) | Kök `Sudoris` node'u → Inspector → **Level Help** |
+| Titreşim (açık/kapalı, taş bırakınca süre ve güç, bölge bitince kaç kat) | Kök `Sudoris` node'u → Inspector → **Haptics** |
 | Pencerelerin açılış animasyonu | `PauseModal`, `WinModal`, `GameOverModal`, `HowToModal` altındaki `Animator` → Animation panelinde `open` |
 | Menü yazıları, butonlar, pencere düzeni | `main.tscn` içindeki node'lar (Label, Button vb.) |
 | Oyun kuralları, parça şekilleri, zorluk | `main.gd` → `shape_catalog()`, `maximum_region_target()` |
@@ -54,4 +55,11 @@ Değişiklikleri kaydettikten sonra:
 cd ~/sudoris-dev && git add -A && git commit -m "açıklama" && git push
 ```
 
-Web sürümü `hubicoop/sudoris` reposundan yayınlanır. Değişikliklerin oraya da kopyalanması gerekir (README ve `.github` hariç).
+`main`'e her push'ta GitHub Actions ("Web build") Web sürümünü Godot 4.7.2 ile dışa aktarır ve `hubicoop/sudoris` reposunun `gh-pages` dalına yükler. Birkaç dakika sonra https://hubicoop.github.io/sudoris/ güncellenir; elle kopyalamaya gerek yok.
+
+### Tek seferlik kurulum
+
+1. Bir SSH anahtarı üret: `ssh-keygen -t ed25519 -N "" -C sudoris-pages -f sudoris-pages`
+2. `hubicoop/sudoris` → Settings → Deploy keys → Add deploy key: `sudoris-pages.pub` içeriğini yapıştır, **Allow write access** kutusunu işaretle.
+3. `hubicoop/sudoris-dev` → Settings → Secrets and variables → Actions → New repository secret: adı `SUDORIS_PAGES_DEPLOY_KEY`, değeri `sudoris-pages` (özel anahtar) dosyasının içeriği. Sonra iki anahtar dosyasını da sil.
+4. İlk yayından sonra `hubicoop/sudoris` → Settings → Pages → Source: **Deploy from a branch**, dal `gh-pages`, klasör `/ (root)`.

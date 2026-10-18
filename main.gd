@@ -32,6 +32,16 @@ const SAVE_PATH := "user://progress.cfg"
 ## Extra gap (in cells) between the finger and the bottom of a tall piece.
 @export_range(0.0, 3.0, 0.05) var drag_lift_margin := 1.25
 
+@export_group("Haptics")
+## Vibrate the phone when a piece is placed and when a region is completed.
+@export var haptics_enabled := true
+## Length of the tiny buzz when a piece lands, in milliseconds.
+@export_range(1, 200) var place_vibration_ms := 20
+## Strength of that buzz (Android only; browsers ignore it).
+@export_range(0.0, 1.0, 0.05) var place_vibration_strength := 0.3
+## Completing a region buzzes this many times stronger and longer than a placement.
+@export_range(1.0, 4.0, 0.5) var region_vibration_scale := 2.0
+
 class PuzzlePiece:
 	var cells: Array[Vector2i]
 	var solution_cells: Array[Vector2i]
@@ -97,6 +107,8 @@ var level := 1
 var score := 0
 var combo := 0
 var combo_deadline_ms := 0
+## Duration and strength of the last vibration sent, for tests.
+var last_vibration := Vector2.ZERO
 
 func _ready() -> void:
 	rng.randomize()
@@ -152,15 +164,22 @@ func _on_action_button_input(event: InputEvent, action: Callable) -> void:
 func new_puzzle() -> void:
 	draw_order.clear()
 	var valid_puzzle := false
+	var built := false
 	for attempt in 160:
 		prepare_empty_board()
-		build_solution_from_catalog()
+		built = build_solution_from_catalog()
+		if not built:
+			continue
 		calculate_targets()
 		if targets_match_difficulty():
 			valid_puzzle = true
 			break
 	if not valid_puzzle:
 		push_warning("Could not generate every requested target after 160 attempts; using the closest valid puzzle.")
+	while not built:
+		prepare_empty_board()
+		built = build_solution_from_catalog()
+		calculate_targets()
 	solution_piece_count = pieces.size()
 	for y in BOARD_SIZE:
 		for x in BOARD_SIZE:
@@ -218,30 +237,81 @@ func targets_match_difficulty() -> bool:
 	# New values are introduced deliberately instead of only becoming possible.
 	return maximum == 5 or targets.has(maximum)
 
-func monomino_chance() -> float:
-	var maximum := maximum_region_target()
-	if maximum == 5:
-		return 0.0
-	if maximum == 6:
-		return 0.01
-	return 0.04
+## Placements the generator may try before it gives up on one attempt.
+const GENERATOR_STEP_LIMIT := 4000
 
-func build_solution_from_catalog() -> void:
-	var filled_cells := 0
-	while filled_cells < BOARD_SIZE * BOARD_SIZE:
-		var anchor := first_empty_cell()
-		var candidates := placement_candidates(anchor, false)
-		# Monominoes remain uncommon, but guarantee that every generated board can finish.
-		if candidates.is_empty() or rng.randf() < monomino_chance():
-			candidates.append_array(placement_candidates(anchor, true))
-		var placement: Placement = candidates[rng.randi_range(0, candidates.size() - 1)]
+# Tiles the board with catalog pieces, backtracking when a choice leaves a hole
+# no piece can fill. Returns false if the step limit runs out first.
+func build_solution_from_catalog() -> bool:
+	var steps_left: Array[int] = [GENERATOR_STEP_LIMIT]
+	# Levels that need a crowded region fill one region and its edges with small
+	# pieces first, so many pieces can touch it.
+	var busy_region := -1
+	if maximum_region_target() > 5:
+		busy_region = rng.randi_range(0, BOARD_SIZE - 1)
+	return fill_from_first_empty(steps_left, busy_region)
+
+func fill_from_first_empty(steps_left: Array[int], busy_region: int) -> bool:
+	var anchor := first_empty_cell()
+	if anchor.x == -1:
+		return true
+	var candidates := placement_candidates(anchor)
+	# Shuffle with our own rng so a seed always builds the same puzzle.
+	for index in range(candidates.size() - 1, 0, -1):
+		var other := rng.randi_range(0, index)
+		var swap := candidates[index]
+		candidates[index] = candidates[other]
+		candidates[other] = swap
+	if busy_region != -1 and near_region(anchor, busy_region):
+		var small_first: Array[Placement] = []
+		for size in [2, 3, 4, 6]:
+			for placement in candidates:
+				if placement.board_cells.size() == size:
+					small_first.append(placement)
+		candidates = small_first
+	for placement in candidates:
+		if steps_left[0] <= 0:
+			return false
+		steps_left[0] -= 1
 		var piece_id := pieces.size()
 		var palette_cycle: int = int(piece_id / palette.size())
 		var piece_color: Color = palette[piece_id % palette.size()].lightened(palette_cycle * 0.08)
 		pieces.append(PuzzlePiece.new(placement.local_cells, placement.board_cells, piece_color))
 		for cell in placement.board_cells:
 			board[cell.y][cell.x] = piece_id
-			filled_cells += 1
+		if not leaves_stranded_cell(placement.board_cells) and fill_from_first_empty(steps_left, busy_region):
+			return true
+		for cell in placement.board_cells:
+			board[cell.y][cell.x] = EMPTY
+		pieces.pop_back()
+	return false
+
+# True if the cell is inside the region or right next to its edge.
+func near_region(cell: Vector2i, region: int) -> bool:
+	var start := Vector2i((region % 3) * REGION_SIZE, (region / 3) * REGION_SIZE)
+	return cell.x >= start.x - 1 and cell.x <= start.x + REGION_SIZE and cell.y >= start.y - 1 and cell.y <= start.y + REGION_SIZE
+
+# True if filling these (already occupied) cells cut off an empty square from
+# every other empty square. Every piece is at least two squares, so such a hole
+# can never be filled.
+func leaves_stranded_cell(filled: Array[Vector2i]) -> bool:
+	const SIDES: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for cell in filled:
+		for side in SIDES:
+			var neighbour := cell + side
+			if not cell_is_empty(neighbour):
+				continue
+			var stranded := true
+			for other_side in SIDES:
+				if cell_is_empty(neighbour + other_side):
+					stranded = false
+					break
+			if stranded:
+				return true
+	return false
+
+func cell_is_empty(cell: Vector2i) -> bool:
+	return cell.x >= 0 and cell.x < BOARD_SIZE and cell.y >= 0 and cell.y < BOARD_SIZE and board[cell.y][cell.x] == EMPTY
 
 func first_empty_cell() -> Vector2i:
 	for y in BOARD_SIZE:
@@ -250,15 +320,13 @@ func first_empty_cell() -> Vector2i:
 				return Vector2i(x, y)
 	return Vector2i(-1, -1)
 
-func placement_candidates(anchor: Vector2i, monomino_only: bool) -> Array[Placement]:
+func placement_candidates(anchor: Vector2i) -> Array[Placement]:
 	var candidates: Array[Placement] = []
 	var catalog := shape_catalog()
 	for base_shape in catalog:
 		var typed_shape: Array[Vector2i] = []
 		for cell in base_shape:
 			typed_shape.append(cell)
-		if monomino_only != (typed_shape.size() == 1):
-			continue
 		for orientation in unique_orientations(typed_shape):
 			var oriented_shape: Array[Vector2i] = orientation
 			for anchor_cell in oriented_shape:
@@ -277,7 +345,7 @@ func placement_candidates(anchor: Vector2i, monomino_only: bool) -> Array[Placem
 
 func shape_catalog() -> Array:
 	return [
-		# Extra rectangular pieces: 2x3, 1x3, 2x1 and 1x1.
+		# Extra rectangular pieces: 2x3, 1x3 and 2x1.
 		[Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(0, 2), Vector2i(1, 2)],
 		[Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0)],
 		[Vector2i(0, 0), Vector2i(1, 0)],
@@ -288,8 +356,7 @@ func shape_catalog() -> Array:
 		[Vector2i(1, 0), Vector2i(2, 0), Vector2i(0, 1), Vector2i(1, 1)],
 		[Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1), Vector2i(2, 1)],
 		[Vector2i(0, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1)],
-		[Vector2i(2, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1)],
-		[Vector2i(0, 0)]
+		[Vector2i(2, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(2, 1)]
 	]
 
 func unique_orientations(base_shape: Array[Vector2i]) -> Array:
@@ -353,20 +420,13 @@ func take_next_piece() -> int:
 			return helpful
 	if next_piece >= draw_order.size():
 		return create_extra_piece()
-	var fitting_large: Array[int] = []
-	var fitting_single: Array[int] = []
+	var fitting: Array[int] = []
 	for index in range(next_piece, draw_order.size()):
-		var candidate_id: int = draw_order[index]
-		if piece_can_fit(candidate_id):
-			if pieces[candidate_id].cells.size() == 1:
-				fitting_single.append(index)
-			else:
-				fitting_large.append(index)
+		if piece_can_fit(draw_order[index]):
+			fitting.append(index)
 	var chosen_index := next_piece
-	if not fitting_large.is_empty():
-		chosen_index = fitting_large[rng.randi_range(0, fitting_large.size() - 1)]
-	elif not fitting_single.is_empty():
-		chosen_index = fitting_single[rng.randi_range(0, fitting_single.size() - 1)]
+	if not fitting.is_empty():
+		chosen_index = fitting[rng.randi_range(0, fitting.size() - 1)]
 	var id: int = draw_order[chosen_index]
 	draw_order[chosen_index] = draw_order[next_piece]
 	draw_order[next_piece] = id
@@ -409,8 +469,9 @@ func take_helpful_piece() -> int:
 	pieces.append(PuzzlePiece.new(chosen.duplicate(), no_solution, palette[pieces.size() % palette.size()]))
 	return pieces.size() - 1
 
-# True if some rotation and position of these cells completes a region and
-# leaves every region it touches within the rules.
+# True if some rotation and position of these cells completes a region,
+# leaves every region it touches within the rules and does not cut off a
+# one-square hole that no piece could fill afterwards.
 func cells_can_complete_region(base_cells: Array[Vector2i]) -> bool:
 	const PROBE := -2
 	for orientation in unique_orientations(base_cells):
@@ -429,14 +490,15 @@ func cells_can_complete_region(base_cells: Array[Vector2i]) -> bool:
 				for target in placed:
 					board[target.y][target.x] = PROBE
 					touched[int(target.y / REGION_SIZE) * 3 + int(target.x / REGION_SIZE)] = true
-				var safe := true
+				var safe := not leaves_stranded_cell(placed)
 				var completes := false
-				for region in touched:
-					if region_failure(region) != "":
-						safe = false
-						break
-					if region_is_full(region):
-						completes = true
+				if safe:
+					for region in touched:
+						if region_failure(region) != "":
+							safe = false
+							break
+						if region_is_full(region):
+							completes = true
 				for target in placed:
 					board[target.y][target.x] = EMPTY
 				if safe and completes:
@@ -456,7 +518,8 @@ func create_extra_piece() -> int:
 				fitting_shapes.append(cells)
 				largest_size = maxi(largest_size, cells.size())
 	if fitting_shapes.is_empty():
-		var fallback: Array[Vector2i] = [Vector2i.ZERO]
+		# Only one-square holes are left, so nothing fits; the smallest piece ends the game.
+		var fallback: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0)]
 		var fallback_color: Color = palette[pieces.size() % palette.size()]
 		pieces.append(PuzzlePiece.new(fallback, [], fallback_color))
 		return pieces.size() - 1
@@ -623,6 +686,7 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 	for cell in placed_cells:
 		board_cells.append(origin + cell)
 	board_view.animate_completed_regions(newly_completed, board_cells)
+	vibrate_for_move(not newly_completed.is_empty())
 	board_view.animate_wave(new_completed_lines(completed_before_regions, completed_after_regions))
 	if check_failure():
 		return true
@@ -631,6 +695,17 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 		message = "No available piece can fit on the board."
 		show_game_over()
 	return true
+
+# A tiny buzz for a placed piece, a stronger and longer one when a region completes.
+# Browsers can only vary the length, so the length grows with the strength.
+func vibrate_for_move(completed_region: bool) -> void:
+	if not haptics_enabled:
+		return
+	var factor := region_vibration_scale if completed_region else 1.0
+	var duration := int(round(place_vibration_ms * factor))
+	var strength := minf(place_vibration_strength * factor, 1.0)
+	last_vibration = Vector2(duration, strength)
+	Input.vibrate_handheld(duration, strength)
 
 const REGION_LINES := [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8]]
 
