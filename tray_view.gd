@@ -96,7 +96,7 @@ func _gui_input(event: InputEvent) -> void:
 
 func _draw() -> void:
 	var look := current_skin()
-	var panel := look.rounded_box(look.tray_panel_color, 22, look.tray_border_color, 1)
+	var panel := look.rounded_box(look.tray_panel_color, 24)
 	panel.shadow_color = Color(0.05, 0.08, 0.02, 0.35)
 	panel.shadow_size = 7
 	panel.shadow_offset = Vector2(0, 4)
@@ -108,8 +108,8 @@ func _draw() -> void:
 		var card := _card_rect(slot, slot_width)
 		var rotate_rect := _rotate_rect(card)
 		var border := look.slot_border_active_color if id != -1 else look.slot_border_empty_color
-		draw_style_box(look.rounded_box(look.slot_color, 14, border, 1), card)
-		draw_style_box(look.rounded_box(look.rotate_button_color, 10, look.rotate_button_border_color, 1), rotate_rect)
+		draw_style_box(look.rounded_box(look.slot_color, 16, border, 1), card)
+		draw_style_box(look.rounded_box(look.rotate_button_color, 12), rotate_rect)
 		_draw_rotate_icon(look, rotate_rect.get_center())
 		if id == -1 or id >= pieces.size():
 			continue

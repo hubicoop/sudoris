@@ -77,6 +77,9 @@ var completion_regions: Array[int] = []
 var completion_delays := {}
 var completion_progress := 0.0
 var completion_tween: Tween
+# Cell -> colour of squares that were emptied when their region completed (Time
+# Attack). They turn green with the region and then shrink away.
+var vanishing_cells := {}
 # Cell -> 0..1 position along a row or column of three completed regions doing a wave.
 var wave_positions := {}
 var wave_progress := 0.0
@@ -173,10 +176,11 @@ func _finish_placement_animation() -> void:
 	placement_tween = null
 	queue_redraw()
 
-func animate_completed_regions(regions: Array[int], source_cells: Array[Vector2i]) -> void:
+func animate_completed_regions(regions: Array[int], source_cells: Array[Vector2i], vanishing := {}) -> void:
 	if regions.is_empty():
 		return
 	completion_regions = regions.duplicate()
+	vanishing_cells = vanishing.duplicate()
 	completion_delays.clear()
 	for region in regions:
 		_compute_spread_delays(region, source_cells)
@@ -259,6 +263,7 @@ func _set_completion_progress(value: float) -> void:
 	queue_redraw()
 
 func _finish_completion_animation() -> void:
+	vanishing_cells.clear()
 	completion_regions.clear()
 	completion_delays.clear()
 	completion_progress = 0.0
@@ -364,6 +369,8 @@ func _draw() -> void:
 				var half := fill_rect.size * cell_scale * 0.5
 				fill_rect = Rect2(fill_rect.get_center() - half, half * 2.0)
 			look.draw_block(self, fill_rect, color)
+	for cell in vanishing_cells:
+		_draw_vanishing_cell(look, rect, cs, cell)
 	_draw_drop_ghost(look, rect, cs)
 	if not targets.is_empty() and not board.is_empty():
 		for region in BOARD_SIZE:
@@ -371,6 +378,20 @@ func _draw() -> void:
 	for region in completion_regions:
 		if region >= 0 and region < BOARD_SIZE:
 			_draw_completion_effect(look, _region_rect(rect, cs, region), region)
+
+# A square of a region that has already been emptied: it greens like a completed
+# region, then shrinks to nothing while the rings and sparkles play.
+func _draw_vanishing_cell(look: SudorisSkin, rect: Rect2, cs: float, cell: Vector2i) -> void:
+	if board.is_empty() or board[cell.y][cell.x] != EMPTY:
+		return
+	var green := _green_amount(cell)
+	var shrink := clampf((completion_progress - spread_share) / (1.0 - spread_share), 0.0, 1.0)
+	var cell_scale := (1.0 + pop_amount * _sample(pop_curve, green, sin(PI * green))) * (1.0 - ease(shrink, 2.0))
+	if cell_scale <= 0.01:
+		return
+	var fill_rect := Rect2(rect.position + Vector2(cell) * cs, Vector2.ONE * cs).grow(-1.5)
+	var half := fill_rect.size * cell_scale * 0.5
+	look.draw_block(self, Rect2(fill_rect.get_center() - half, half * 2.0), vanishing_cells[cell].lerp(look.completed_color, green))
 
 func _region_rect(rect: Rect2, cs: float, region: int) -> Rect2:
 	return Rect2(rect.position + Vector2(region % 3, region / 3) * 3.0 * cs, Vector2.ONE * cs * 3.0)
@@ -474,10 +495,10 @@ func _is_completed_region(region: int) -> bool:
 	return region >= 0 and region < completed_regions.size() and completed_regions[region]
 
 func _panel_style(look: SudorisSkin) -> StyleBoxFlat:
-	var style := look.rounded_box(look.board_panel_color, 12, look.board_border_color, 3)
+	var style := look.rounded_box(look.board_panel_color, 18)
 	style.shadow_color = Color(0.05, 0.08, 0.02, 0.45)
-	style.shadow_size = 8
-	style.shadow_offset = Vector2(0, 5)
+	style.shadow_size = 16
+	style.shadow_offset = Vector2(0, 8)
 	return style
 
 # --- Editor preview -------------------------------------------------------------

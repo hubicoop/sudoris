@@ -4,6 +4,10 @@ const BOARD_SIZE := 9
 const REGION_SIZE := 3
 const EMPTY := -1
 const SAVE_PATH := "user://progress.cfg"
+# Preloaded rather than global class_names, so the game runs even before the
+# editor has rescanned the project for new classes.
+const SudorisSettings := preload("res://settings.gd")
+const SudorisStrings := preload("res://strings.gd")
 
 ## Piece colours, used in order. Select the root "Sudoris" node to edit them.
 @export var palette: Array[Color] = [Color("#ef5d50"), Color("#f59f45"), Color("#f2d35e"), Color("#4ec982"), Color("#30b8b0"), Color("#49a5e6"), Color("#8b78e6"), Color("#e46aa8")]
@@ -41,6 +45,27 @@ const SAVE_PATH := "user://progress.cfg"
 @export_range(0.0, 1.0, 0.05) var place_vibration_strength := 0.3
 ## Completing a region buzzes this many times stronger and longer than a placement.
 @export_range(1.0, 4.0, 0.5) var region_vibration_scale := 2.0
+
+@export_group("Time Attack")
+## Seconds on the clock when a Time Attack run starts.
+@export_range(5.0, 300.0, 1.0) var time_attack_start_seconds := 45.0
+## Seconds added for every completed region.
+@export_range(0.0, 120.0, 1.0) var time_attack_bonus_seconds := 20.0
+## The clock turns red below this many seconds.
+@export_range(0.0, 60.0, 1.0) var time_attack_warning_seconds := 10.0
+## New regions get counts from 3 to 4 at first; every this many completed regions
+## the highest possible count grows by one, up to 6.
+@export_range(1, 20) var time_attack_target_growth := 3
+## Clock colour while time is running low.
+@export var time_attack_warning_color := Color("#ff8a6b")
+
+@export_group("Settings Toggles")
+## Look of a settings switch that is on.
+@export var toggle_on_style: StyleBox
+## Look of a settings switch that is off.
+@export var toggle_off_style: StyleBox
+
+enum Mode { CLASSIC, TIME_ATTACK }
 
 class PuzzlePiece:
 	var cells: Array[Vector2i]
@@ -88,6 +113,16 @@ class Placement:
 @onready var level_label: Label = %LevelLabel
 @onready var score_label: Label = %ScoreLabel
 @onready var combo_label: Label = %ComboLabel
+@onready var timer_label: Label = %TimerLabel
+@onready var game_over_title: Label = %GameOverTitle
+@onready var main_menu: Control = %MainMenu
+@onready var classic_info: Label = %ClassicInfo
+@onready var time_attack_info: Label = %TimeAttackInfo
+@onready var settings_modal: Control = %SettingsModal
+@onready var sound_toggle: Button = %SoundToggle
+@onready var music_toggle: Button = %MusicToggle
+@onready var vibration_toggle: Button = %VibrationToggle
+@onready var language_button: Button = %LanguageButton
 
 var rng := RandomNumberGenerator.new()
 var pieces: Array[PuzzlePiece] = []
@@ -98,7 +133,7 @@ var draw_order: Array[int] = []
 var next_piece := 0
 var dragging_piece := -1
 var drag_position := Vector2.ZERO
-var message := "Fill every square. Match the region counts."
+var message := ""
 var last_rotation_ms := -1000
 var last_action_ms := -1000
 var solution_piece_count := 0
@@ -109,9 +144,20 @@ var combo := 0
 var combo_deadline_ms := 0
 ## Duration and strength of the last vibration sent, for tests.
 var last_vibration := Vector2.ZERO
+var mode := Mode.CLASSIC
+## Seconds left in a Time Attack run.
+var time_left := 0.0
+var best_time_attack_score := 0
+## Regions completed in the current Time Attack run.
+var time_attack_regions := 0
+## The rules are shown automatically before the very first game.
+var how_to_seen := false
+var settings := SudorisSettings.new()
 
 func _ready() -> void:
 	rng.randomize()
+	settings.load_settings()
+	settings.apply()
 	load_progress()
 	_connect_action_button(%ResetButton, reset_puzzle)
 	_connect_action_button(%PauseButton, show_pause_menu)
@@ -120,6 +166,19 @@ func _ready() -> void:
 	_connect_action_button(%RestartButton, new_puzzle)
 	_connect_action_button(%HowToPlayButton, hide_how_to)
 	_connect_action_button(%NextLevelButton, next_level)
+	_connect_action_button(%ClassicButton, start_mode.bind(Mode.CLASSIC))
+	_connect_action_button(%TimeAttackButton, start_mode.bind(Mode.TIME_ATTACK))
+	_connect_action_button(%MenuSettingsButton, show_settings)
+	_connect_action_button(%PauseSettingsButton, show_settings)
+	_connect_action_button(%PauseMenuButton, show_main_menu)
+	_connect_action_button(%GameOverMenuButton, show_main_menu)
+	_connect_action_button(%WinMenuButton, show_main_menu)
+	_connect_action_button(sound_toggle, toggle_sound)
+	_connect_action_button(music_toggle, toggle_music)
+	_connect_action_button(vibration_toggle, toggle_vibration)
+	_connect_action_button(language_button, change_language)
+	_connect_action_button(%SettingsHowToButton, show_how_to)
+	_connect_action_button(%SettingsCloseButton, hide_settings)
 	tray_view.piece_picked.connect(start_drag)
 	tray_view.rotate_requested.connect(rotate_piece)
 	board_view.dropped.connect(drop_piece)
@@ -134,13 +193,25 @@ func _ready() -> void:
 	drag_layer.draw.connect(func() -> void: board_view.draw_floating(drag_layer))
 	board_view.floating_layer = drag_layer
 	new_puzzle()
-	open_modal(how_to_modal)
-	how_to_modal.move_to_front()
+	show_main_menu()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if combo > 0 and Time.get_ticks_msec() > combo_deadline_ms:
 		combo = 0
 		refresh_views()
+	if mode == Mode.TIME_ATTACK and is_playing():
+		tick_clock(delta)
+
+## Runs the Time Attack clock down; the run ends when it reaches zero.
+func tick_clock(delta: float) -> void:
+	time_left = maxf(time_left - delta, 0.0)
+	refresh_timer()
+	if time_left <= 0.0:
+		time_up()
+
+## True while the board is on screen and no menu or window covers it.
+func is_playing() -> bool:
+	return not (main_menu.visible or pause_modal.visible or game_over_modal.visible or win_modal.visible or how_to_modal.visible or settings_modal.visible)
 
 func _connect_action_button(button: Button, action: Callable) -> void:
 	button.gui_input.connect(_on_action_button_input.bind(action))
@@ -192,10 +263,12 @@ func new_puzzle() -> void:
 	score = 0
 	combo = 0
 	combo_deadline_ms = 0
+	time_left = time_attack_start_seconds
+	time_attack_regions = 0
 	for slot in active_slots.size():
 		active_slots[slot] = take_next_piece()
 	dragging_piece = -1
-	message = "Fill the board and make every region count match."
+	message = intro_message()
 	hide_pause_menu()
 	hide_game_over()
 	hide_win()
@@ -222,10 +295,17 @@ func calculate_targets() -> void:
 		for region_index in regions:
 			targets[region_index] += 1
 
+func intro_message() -> String:
+	if mode == Mode.TIME_ATTACK:
+		return tr("Complete regions to win more time.")
+	return tr("Fill the board and make every region count match.")
+
 func maximum_region_target() -> int:
-	if level <= 2:
+	# Time Attack always plays with the first level's targets.
+	var difficulty := 1 if mode == Mode.TIME_ATTACK else level
+	if difficulty <= 2:
 		return 5
-	if level <= 4:
+	if difficulty <= 4:
 		return 6
 	return 7
 
@@ -300,6 +380,23 @@ func leaves_stranded_cell(filled: Array[Vector2i]) -> bool:
 		for side in SIDES:
 			var neighbour := cell + side
 			if not cell_is_empty(neighbour):
+				continue
+			var stranded := true
+			for other_side in SIDES:
+				if cell_is_empty(neighbour + other_side):
+					stranded = false
+					break
+			if stranded:
+				return true
+	return false
+
+# Like leaves_stranded_cell, but ignores squares that were cut off before.
+func strands_new_cell(filled: Array[Vector2i], ignored: Dictionary) -> bool:
+	const SIDES: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for cell in filled:
+		for side in SIDES:
+			var neighbour := cell + side
+			if not cell_is_empty(neighbour) or ignored.has(neighbour):
 				continue
 			var stranded := true
 			for other_side in SIDES:
@@ -394,6 +491,10 @@ func shape_key(shape: Array[Vector2i]) -> String:
 	return key
 
 func reset_puzzle() -> void:
+	if mode == Mode.TIME_ATTACK:
+		# A Time Attack board changes as it goes, so resetting starts a new run.
+		new_puzzle()
+		return
 	for y in BOARD_SIZE:
 		for x in BOARD_SIZE:
 			board[y][x] = EMPTY
@@ -408,7 +509,7 @@ func reset_puzzle() -> void:
 	for slot in active_slots.size():
 		active_slots[slot] = take_next_piece()
 	dragging_piece = -1
-	message = "Puzzle reset. Try a new arrangement."
+	message = tr("Puzzle reset. Try a new arrangement.")
 	hide_game_over()
 	hide_win()
 	refresh_views()
@@ -434,7 +535,7 @@ func take_next_piece() -> int:
 	return id
 
 func help_is_active() -> bool:
-	return level <= help_max_level and completed_region_count() >= help_after_regions
+	return mode == Mode.CLASSIC and level <= help_max_level and completed_region_count() >= help_after_regions
 
 func tray_can_complete_region() -> bool:
 	for piece_id in active_slots:
@@ -621,7 +722,7 @@ func drop_piece(origin: Vector2i) -> void:
 		board_view.animate_placement(placed_cells, from_offset)
 
 func _input(event: InputEvent) -> void:
-	if how_to_modal.visible or game_over_modal.visible or win_modal.visible or dragging_piece == -1:
+	if not is_playing() or dragging_piece == -1:
 		return
 	var position := Vector2.ZERO
 	var moving := false
@@ -653,7 +754,7 @@ func _input(event: InputEvent) -> void:
 
 func place_piece(piece_id: int, origin: Vector2i) -> bool:
 	if not can_place(piece_id, origin):
-		message = "That piece does not fit there."
+		message = tr("That piece does not fit there.")
 		return false
 	var completed_before := completed_region_count()
 	var completed_before_regions := completed_regions_list()
@@ -676,30 +777,38 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 		multiplier *= int(pow(region_multiplier, completed_regions))
 	var earned := placed_cells.size() * points_per_square * multiplier
 	score += earned
+	var vanishing := {}
+	if mode == Mode.TIME_ATTACK and not newly_completed.is_empty():
+		# Completed regions empty out before the tray refills, so new pieces suit the new board.
+		vanishing = replace_regions(newly_completed)
+		time_left += time_attack_bonus_seconds * newly_completed.size()
 	for slot in active_slots.size():
 		if active_slots[slot] == piece_id:
 			# Clear the slot first so the placed piece is not counted as still in the tray.
 			active_slots[slot] = -1
 			active_slots[slot] = take_next_piece()
-	message = "+%d points  /  Combo x%d" % [earned, combo]
+	message = tr("+%d points  /  Combo x%d") % [earned, combo]
+	if mode == Mode.TIME_ATTACK and not newly_completed.is_empty():
+		message += tr("  /  +%d s") % int(time_attack_bonus_seconds * newly_completed.size())
 	var board_cells: Array[Vector2i] = []
 	for cell in placed_cells:
 		board_cells.append(origin + cell)
-	board_view.animate_completed_regions(newly_completed, board_cells)
+	board_view.animate_completed_regions(newly_completed, board_cells, vanishing)
 	vibrate_for_move(not newly_completed.is_empty())
 	board_view.animate_wave(new_completed_lines(completed_before_regions, completed_after_regions))
 	if check_failure():
 		return true
-	check_completion()
+	if mode == Mode.CLASSIC:
+		check_completion()
 	if not win_modal.visible and not has_available_move():
-		message = "No available piece can fit on the board."
+		message = tr("No available piece can fit on the board.")
 		show_game_over()
 	return true
 
 # A tiny buzz for a placed piece, a stronger and longer one when a region completes.
 # Browsers can only vary the length, so the length grows with the strength.
 func vibrate_for_move(completed_region: bool) -> void:
-	if not haptics_enabled:
+	if not haptics_enabled or not settings.vibration:
 		return
 	var factor := region_vibration_scale if completed_region else 1.0
 	var duration := int(round(place_vibration_ms * factor))
@@ -749,16 +858,16 @@ func check_completion() -> void:
 			return
 	for region in BOARD_SIZE:
 		if region_count(region) != targets[region]:
-			message = "Board full, but some region counts do not match."
+			message = tr("Board full, but some region counts do not match.")
 			return
-	message = "Puzzle complete! Every region is satisfied."
+	message = tr("Puzzle complete! Every region is satisfied.")
 	show_win()
 
 func check_failure() -> bool:
 	for region in BOARD_SIZE:
 		var failure := region_failure(region)
 		if failure != "":
-			message = failure
+			message = tr(failure)
 			show_game_over()
 			return true
 	return false
@@ -809,17 +918,111 @@ func hide_pause_menu() -> void:
 	pause_modal.visible = false
 
 func show_game_over() -> void:
-	# Failing a puzzle sends the player back to the first level.
-	level = 1
-	save_progress()
-	game_over_reason.text = message + "\nBack to level 1."
+	dragging_piece = -1
+	if mode == Mode.TIME_ATTACK:
+		var record := score > best_time_attack_score
+		best_time_attack_score = maxi(best_time_attack_score, score)
+		save_progress()
+		game_over_title.text = tr("TIME'S UP") if time_left <= 0.0 else tr("RUN OVER")
+		game_over_reason.text = message + "\n" + tr("Score: %d  /  Best: %d") % [score, best_time_attack_score]
+		if record and score > 0:
+			game_over_reason.text += "\n" + tr("New record!")
+	else:
+		# Failing a puzzle sends the player back to the first level.
+		level = 1
+		save_progress()
+		game_over_title.text = tr("GAME FAILED")
+		game_over_reason.text = message + "\n" + tr("Back to level 1.")
+	refresh_views()
 	open_modal(game_over_modal)
+
+func time_up() -> void:
+	time_left = 0.0
+	message = tr("Time is up.")
+	show_game_over()
 
 func hide_game_over() -> void:
 	game_over_modal.visible = false
 
+func show_how_to() -> void:
+	open_modal(how_to_modal)
+
 func hide_how_to() -> void:
 	how_to_modal.visible = false
+
+func start_mode(new_mode: Mode) -> void:
+	mode = new_mode
+	new_puzzle()
+	main_menu.visible = false
+	if not how_to_seen:
+		how_to_seen = true
+		save_progress()
+		show_how_to()
+
+func show_main_menu() -> void:
+	dragging_piece = -1
+	hide_pause_menu()
+	hide_game_over()
+	hide_win()
+	refresh_menu()
+	main_menu.visible = true
+
+func refresh_menu() -> void:
+	classic_info.text = tr("LEVEL %d") % level
+	if best_time_attack_score > 0:
+		time_attack_info.text = tr("BEST %d") % best_time_attack_score
+	else:
+		time_attack_info.text = tr("%d S START  /  +%d S PER REGION") % [int(time_attack_start_seconds), int(time_attack_bonus_seconds)]
+
+func show_settings() -> void:
+	refresh_settings()
+	open_modal(settings_modal)
+
+func hide_settings() -> void:
+	settings_modal.visible = false
+
+func toggle_sound() -> void:
+	settings.sound = not settings.sound
+	save_and_apply_settings()
+
+func toggle_music() -> void:
+	settings.music = not settings.music
+	save_and_apply_settings()
+
+func toggle_vibration() -> void:
+	settings.vibration = not settings.vibration
+	save_and_apply_settings()
+	# A short buzz so the player feels that vibration is back on.
+	if settings.vibration:
+		vibrate_for_move(false)
+
+func change_language() -> void:
+	settings.next_language()
+	save_and_apply_settings()
+	message = intro_message()
+	refresh_menu()
+	refresh_views()
+
+func save_and_apply_settings() -> void:
+	settings.save_settings()
+	settings.apply()
+	refresh_settings()
+
+func refresh_settings() -> void:
+	_show_toggle(sound_toggle, settings.sound)
+	_show_toggle(music_toggle, settings.music)
+	_show_toggle(vibration_toggle, settings.vibration)
+	language_button.text = "TÜRKÇE" if settings.language == "tr" else "ENGLISH"
+
+func _show_toggle(toggle: Button, on: bool) -> void:
+	toggle.text = tr("ON") if on else tr("OFF")
+	var style := toggle_on_style if on else toggle_off_style
+	if style:
+		for state in ["normal", "hover", "pressed", "focus"]:
+			toggle.add_theme_stylebox_override(state, style)
+	var text_color := Color(1, 1, 1) if on else Color(0.137255, 0.180392, 0.0784314)
+	for state in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		toggle.add_theme_color_override(state, text_color)
 
 func show_win() -> void:
 	open_modal(win_modal)
@@ -838,17 +1041,26 @@ func load_progress() -> void:
 	var config := ConfigFile.new()
 	if config.load(SAVE_PATH) == OK:
 		level = maxi(1, int(config.get_value("progress", "level", 1)))
+		how_to_seen = bool(config.get_value("progress", "how_to_seen", false))
+		best_time_attack_score = maxi(0, int(config.get_value("time_attack", "best_score", 0)))
 
 func save_progress() -> void:
 	var config := ConfigFile.new()
 	config.set_value("progress", "level", level)
+	config.set_value("progress", "how_to_seen", how_to_seen)
+	config.set_value("time_attack", "best_score", best_time_attack_score)
 	config.save(SAVE_PATH)
 
 func refresh_views() -> void:
 	status_label.text = message
-	level_label.text = "LEVEL %d  /  TARGETS 3-%d" % [level, maximum_region_target()]
+	if mode == Mode.TIME_ATTACK:
+		level_label.text = tr("TIME ATTACK  /  BEST %d") % best_time_attack_score
+	else:
+		level_label.text = tr("LEVEL %d  /  TARGETS 3-%d") % [level, maximum_region_target()]
+	timer_label.visible = mode == Mode.TIME_ATTACK
+	refresh_timer()
 	score_label.text = "%s" % score
-	combo_label.text = "COMBO x%d" % maxi(1, combo)
+	combo_label.text = tr("COMBO x%d") % maxi(1, combo)
 	combo_label.visible = combo > 0
 	board_view.configure(board, pieces, targets, dragging_piece, drag_position)
 	var completed_flags: Array[bool] = []
@@ -859,3 +1071,150 @@ func refresh_views() -> void:
 	board_view.set_completed_regions(completed_flags)
 	tray_view.configure(pieces, active_slots, dragging_piece)
 	drag_layer.queue_redraw()
+
+func refresh_timer() -> void:
+	if mode != Mode.TIME_ATTACK:
+		return
+	var seconds := int(ceil(time_left))
+	timer_label.text = "%d:%02d" % [seconds / 60, seconds % 60]
+	timer_label.modulate = time_attack_warning_color if time_left <= time_attack_warning_seconds else Color.WHITE
+
+# --- Time Attack ----------------------------------------------------------------
+
+## Empties completed regions and gives each a new target with fresh pieces that can
+## fill it. Returns the colour every emptied square had, for the vanish effect.
+func replace_regions(regions: Array[int]) -> Dictionary:
+	var vanishing := {}
+	for region in regions:
+		for cell in region_cells(region):
+			if board[cell.y][cell.x] != EMPTY:
+				vanishing[cell] = pieces[board[cell.y][cell.x]].color
+			board[cell.y][cell.x] = EMPTY
+	# Planned pieces stay on the board until every region is dealt, so two regions
+	# emptied by one move never plan the same squares.
+	var planned: Array[Vector2i] = []
+	for region in regions:
+		time_attack_regions += 1
+		var first_new := pieces.size()
+		targets[region] = deal_region_pieces(region, rng.randi_range(3, time_attack_max_target()))
+		for id in range(first_new, pieces.size()):
+			planned.append_array(pieces[id].solution_cells)
+	for cell in planned:
+		board[cell.y][cell.x] = EMPTY
+	return vanishing
+
+## Highest count a new region may get: starts at 4 and grows with completed regions.
+func time_attack_max_target() -> int:
+	var growth := time_attack_regions / maxi(time_attack_target_growth, 1)
+	return mini(4 + growth, 6)
+
+func region_cells(region: int) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	var start := Vector2i((region % 3) * REGION_SIZE, (region / 3) * REGION_SIZE)
+	for y in range(start.y, start.y + REGION_SIZE):
+		for x in range(start.x, start.x + REGION_SIZE):
+			cells.append(Vector2i(x, y))
+	return cells
+
+## Plans pieces that fill the (empty) region, adds them to the pieces still to be
+## dealt and returns how many there are: the region's new target. Counts above 4
+## need pieces that reach into neighbouring regions; those only use empty squares
+## and keep the neighbours within their rules. Planned pieces are left on the board.
+func deal_region_pieces(region: int, wanted: int) -> int:
+	var best: Array[Placement] = []
+	for attempt in 40:
+		var tiling := plan_region_tiling(region, wanted)
+		if tiling.is_empty():
+			continue
+		if best.is_empty() or absi(tiling.size() - wanted) < absi(best.size() - wanted):
+			best = tiling
+		if best.size() == wanted:
+			break
+	if best.is_empty() and wanted > 4:
+		# Crowded neighbours left no room to reach out; the region can always be
+		# filled from inside.
+		return deal_region_pieces(region, 4)
+	for placement in best:
+		var id := pieces.size()
+		pieces.append(PuzzlePiece.new(placement.local_cells, placement.board_cells, palette[rng.randi_range(0, palette.size() - 1)]))
+		for cell in placement.board_cells:
+			board[cell.y][cell.x] = id
+		draw_order.insert(rng.randi_range(next_piece, draw_order.size()), id)
+	return best.size()
+
+## One random way to fill the region, or [] if the search ran out of steps.
+func plan_region_tiling(region: int, wanted: int) -> Array[Placement]:
+	var cells := region_cells(region)
+	var steps_left: Array[int] = [400]
+	var result: Array[Placement] = []
+	var first_id := pieces.size()
+	# Squares outside the region already cut off from other empty squares outside it
+	# (their only way out was through the full region) must not block the plan.
+	var already_stranded := {}
+	const SIDES: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+	for y in BOARD_SIZE:
+		for x in BOARD_SIZE:
+			var cell := Vector2i(x, y)
+			if board[y][x] != EMPTY or cells.has(cell):
+				continue
+			var cut_off := true
+			for side in SIDES:
+				if cell_is_empty(cell + side) and not cells.has(cell + side):
+					cut_off = false
+			if cut_off:
+				already_stranded[cell] = true
+	# Placements write temporary ids past the real pieces; region_count only needs them distinct.
+	if not _tile_region(region, cells, wanted, first_id, steps_left, result, already_stranded):
+		result.clear()
+	for placement in result:
+		for cell in placement.board_cells:
+			board[cell.y][cell.x] = EMPTY
+	return result
+
+func _tile_region(region: int, cells: Array[Vector2i], wanted: int, next_id: int, steps_left: Array[int], result: Array[Placement], already_stranded: Dictionary) -> bool:
+	var anchor := Vector2i(-1, -1)
+	for cell in cells:
+		if board[cell.y][cell.x] == EMPTY:
+			anchor = cell
+			break
+	if anchor.x == -1:
+		return true
+	var inside := func(placement: Placement) -> int:
+		var count := 0
+		for cell in placement.board_cells:
+			if int(cell.y / REGION_SIZE) * 3 + int(cell.x / REGION_SIZE) == region:
+				count += 1
+		return count
+	var candidates: Array[Placement] = []
+	for placement in placement_candidates(anchor):
+		# Up to 4 pieces fit inside a region; only higher counts reach outside it.
+		if wanted > 4 or inside.call(placement) == placement.board_cells.size():
+			candidates.append(placement)
+	for index in range(candidates.size() - 1, 0, -1):
+		var other := rng.randi_range(0, index)
+		var swap := candidates[index]
+		candidates[index] = candidates[other]
+		candidates[other] = swap
+	if result.size() + 1 < wanted:
+		# Still short of the count: try pieces that use few of the region's squares first.
+		candidates.sort_custom(func(a: Placement, b: Placement) -> bool: return inside.call(a) < inside.call(b))
+	for placement in candidates:
+		if steps_left[0] <= 0:
+			return false
+		steps_left[0] -= 1
+		var touched := {}
+		for cell in placement.board_cells:
+			board[cell.y][cell.x] = next_id
+			touched[int(cell.y / REGION_SIZE) * 3 + int(cell.x / REGION_SIZE)] = true
+		var safe := result.size() < wanted and not strands_new_cell(placement.board_cells, already_stranded)
+		for other_region in touched:
+			if safe and other_region != region and region_failure(other_region) != "":
+				safe = false
+		if safe:
+			result.append(placement)
+			if _tile_region(region, cells, wanted, next_id + 1, steps_left, result, already_stranded):
+				return true
+			result.pop_back()
+		for cell in placement.board_cells:
+			board[cell.y][cell.x] = EMPTY
+	return false
