@@ -29,6 +29,10 @@ Proje **Godot 4.7.2** ile açılır:
 | Ayarlar ekranı, açık/kapalı düğmelerinin görünümü | `main.tscn` → `SettingsModal`; düğme stilleri kök `Sudoris` → **Settings Toggles** |
 | Türkçe metinler | `strings.gd` (İngilizce metin anahtar, yanına Türkçesi). Yeni bir yazı eklersen buraya da ekle; test eksik çeviriyi yakalar |
 | Ses / müzik açma-kapama | Ayarlar `Sound` ve `Music` ses kanallarını (bus) susturur. İleride eklenecek ses efektlerini `Sound`, müziği `Music` bus'ına bağla |
+| Joker isimleri, açıklamaları ve fiyatları | `jokers.gd` → `CATALOG` (Türkçesi `strings.gd`'de) |
+| Altın: bölüm sonu, hızlı bitirme süresi ve bonusu, art arda bölge süresi | Kök `Sudoris` node'u → Inspector → **Gold** |
+| Joker yuvalarının renkleri | `JokerBar` node'u → Inspector |
+| Joker dükkanı ve joker pencereleri | `main.tscn` → `ShopModal`, `JokerPickModal` |
 | Pencerelerin açılış animasyonu | `PauseModal`, `WinModal`, `GameOverModal`, `HowToModal`, `SettingsModal` altındaki `Animator` → Animation panelinde `open` |
 | Menü yazıları, butonlar, pencere düzeni | `main.tscn` içindeki node'lar (Label, Button vb.) |
 | Oyun kuralları, parça şekilleri, zorluk | `main.gd` → `shape_catalog()`, `maximum_region_target()` |

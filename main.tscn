@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://tray_view.gd" id="3_tray"]
 [ext_resource type="Script" path="res://menu_logo.gd" id="4_logo"]
 [ext_resource type="FontFile" path="res://fonts/Roboto-Bold.ttf" id="5_bold"]
+[ext_resource type="Script" path="res://joker_bar.gd" id="6_jokerbar"]
 
 [sub_resource type="StyleBoxFlat" id="StylePrimary"]
 content_margin_left = 16.0
@@ -581,10 +582,25 @@ skin = ExtResource("3_1bvp3")
 
 [node name="JokerArea" type="Control" parent="Margin/Layout" unique_id=1987650431]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 8)
+custom_minimum_size = Vector2(0, 110)
 layout_mode = 2
 size_flags_vertical = 3
 mouse_filter = 2
+
+[node name="JokerBar" type="Control" parent="Margin/Layout/JokerArea" unique_id=1740220001]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 1
+anchors_preset = -1
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_top = -50.0
+offset_bottom = 50.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("6_jokerbar")
+skin = ExtResource("3_1bvp3")
 
 [node name="MainMenu" type="Control" parent="." unique_id=579341423]
 unique_name_in_owner = true
@@ -1073,6 +1089,215 @@ theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
 text = "MAIN MENU"
 
 [node name="Animator" type="AnimationPlayer" parent="WinModal" unique_id=430138006]
+libraries/ = SubResource("AnimationLibrary_2cqfq")
+
+[node name="ShopModal" type="ColorRect" parent="." unique_id=1740220100]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0745098, 0.0980392, 0.0431373, 0.84)
+
+[node name="Center" type="CenterContainer" parent="ShopModal" unique_id=1740220101]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset_ratio = Vector2(0.5, 0.5)
+
+[node name="Panel" type="PanelContainer" parent="ShopModal/Center" unique_id=1740220102]
+custom_minimum_size = Vector2(340, 200)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Content" type="VBoxContainer" parent="ShopModal/Center/Panel" unique_id=1740220103]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ShopTitle" type="Label" parent="ShopModal/Center/Panel/Content" unique_id=1740220110]
+
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+theme_override_fonts/font = ExtResource("5_bold")
+theme_override_colors/font_color = Color(0.286275, 0.462745, 0.137255, 1)
+text = "JOKER SHOP"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ShopGold" type="Label" parent="ShopModal/Center/Panel/Content" unique_id=1740220111]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 16
+theme_override_fonts/font = ExtResource("5_bold")
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+text = "GOLD 0"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ShopInfo" type="Label" parent="ShopModal/Center/Panel/Content" unique_id=1740220112]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+text = "Jokers go into the two slots under the tray."
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="ShopScroll" type="ScrollContainer" parent="ShopModal/Center/Panel/Content" unique_id=1740220113]
+custom_minimum_size = Vector2(320, 400)
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="ShopList" type="VBoxContainer" parent="ShopModal/Center/Panel/Content/ShopScroll" unique_id=1740220114]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="ShopContinueButton" type="Button" parent="ShopModal/Center/Panel/Content" unique_id=1740220115]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/normal = SubResource("StylePrimary")
+theme_override_styles/hover = SubResource("StylePrimary")
+theme_override_styles/pressed = SubResource("StylePrimaryPressed")
+theme_override_styles/focus = SubResource("StyleFocus")
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_focus_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("5_bold")
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "CONTINUE"
+
+
+[node name="Animator" type="AnimationPlayer" parent="ShopModal" unique_id=1740220104]
+libraries/ = SubResource("AnimationLibrary_2cqfq")
+
+[node name="JokerPickModal" type="ColorRect" parent="." unique_id=1740220200]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0745098, 0.0980392, 0.0431373, 0.84)
+
+[node name="Center" type="CenterContainer" parent="JokerPickModal" unique_id=1740220201]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset_ratio = Vector2(0.5, 0.5)
+
+[node name="Panel" type="PanelContainer" parent="JokerPickModal/Center" unique_id=1740220202]
+custom_minimum_size = Vector2(340, 200)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StylePanel")
+
+[node name="Content" type="VBoxContainer" parent="JokerPickModal/Center/Panel" unique_id=1740220203]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PickTitle" type="Label" parent="JokerPickModal/Center/Panel/Content" unique_id=1740220210]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+theme_override_fonts/font = ExtResource("5_bold")
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+text = "PICK 3"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="PickInfo" type="Label" parent="JokerPickModal/Center/Panel/Content" unique_id=1740220211]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+text = "Choose 3 pieces."
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="PickGrid" type="GridContainer" parent="JokerPickModal/Center/Panel/Content" unique_id=1740220212]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 3
+
+[node name="PickSwapLabel" type="Label" parent="JokerPickModal/Center/Panel/Content" unique_id=1740220213]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+theme_override_font_sizes/font_size = 13
+
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+text = "Swap it with:"
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="PickSwapRow" type="HBoxContainer" parent="JokerPickModal/Center/Panel/Content" unique_id=1740220214]
+unique_name_in_owner = true
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 8
+
+[node name="PickButtons" type="HBoxContainer" parent="JokerPickModal/Center/Panel/Content" unique_id=1740220215]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PickCancelButton" type="Button" parent="JokerPickModal/Center/Panel/Content/PickButtons" unique_id=1740220216]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/normal = SubResource("StyleSoft")
+theme_override_styles/hover = SubResource("StyleSoft")
+theme_override_styles/pressed = SubResource("StyleSoftPressed")
+theme_override_styles/focus = SubResource("StyleFocus")
+theme_override_colors/font_hover_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_colors/font_pressed_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_colors/font_focus_color = Color(0.137255, 0.180392, 0.0784314, 1)
+theme_override_fonts/font = ExtResource("5_bold")
+theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
+text = "CANCEL"
+
+[node name="PickConfirmButton" type="Button" parent="JokerPickModal/Center/Panel/Content/PickButtons" unique_id=1740220217]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_styles/normal = SubResource("StylePrimary")
+theme_override_styles/hover = SubResource("StylePrimary")
+theme_override_styles/pressed = SubResource("StylePrimaryPressed")
+theme_override_styles/focus = SubResource("StyleFocus")
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_focus_color = Color(1, 1, 1, 1)
+theme_override_fonts/font = ExtResource("5_bold")
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+text = "OK"
+
+
+[node name="Animator" type="AnimationPlayer" parent="JokerPickModal" unique_id=1740220204]
 libraries/ = SubResource("AnimationLibrary_2cqfq")
 
 [node name="SettingsModal" type="ColorRect" parent="." unique_id=1270252923]

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Drawn in white; the game tints it (see SudorisJokerBar.icon_color). -->
+  <rect x="22" y="6" width="20" height="20" rx="3" fill="#ffffff"/>
+  <path d="M10 22 H54 V40 A22 18 0 0 1 32 58 A22 18 0 0 1 10 40 Z" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M17 31 H47" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 5"/>
+</svg>
