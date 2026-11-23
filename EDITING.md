@@ -30,7 +30,8 @@ Proje **Godot 4.7.2** ile açılır:
 | Türkçe metinler | `strings.gd` (İngilizce metin anahtar, yanına Türkçesi). Yeni bir yazı eklersen buraya da ekle; test eksik çeviriyi yakalar |
 | Ses / müzik açma-kapama | Ayarlar `Sound` ve `Music` ses kanallarını (bus) susturur. İleride eklenecek ses efektlerini `Sound`, müziği `Music` bus'ına bağla |
 | Joker isimleri, açıklamaları ve fiyatları | `jokers.gd` → `CATALOG` (Türkçesi `strings.gd`'de) |
-| Altın: bölüm sonu, hızlı bitirme süresi ve bonusu, art arda bölge süresi | Kök `Sudoris` node'u → Inspector → **Gold** |
+| Altın: bölüm sonu altını, altınlı kare sayısı ve değeri, başlangıçta seçilecek ücretsiz joker sayısı | Kök `Sudoris` node'u → Inspector → **Gold** |
+| Karelerdeki altın paranın görünümü ve toplama efekti | `BoardView` node'u → Inspector → **Gold Squares** |
 | Joker yuvalarının renkleri | `JokerBar` node'u → Inspector |
 | Joker dükkanı ve joker pencereleri | `main.tscn` → `ShopModal`, `JokerPickModal` |
 | Pencerelerin açılış animasyonu | `PauseModal`, `WinModal`, `GameOverModal`, `HowToModal`, `SettingsModal` altındaki `Animator` → Animation panelinde `open` |

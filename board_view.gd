@@ -50,6 +50,16 @@ signal drag_moved(position: Vector2)
 ## Shape of one square's jump: x = time, y = height. Empty = smooth bump.
 @export var wave_curve: Curve
 
+@export_group("Gold Squares")
+## Coin drawn on empty squares that carry gold.
+@export var gold_color := Color("#f2d35e")
+## Coin size as a share of a square.
+@export_range(0.1, 0.9, 0.01) var gold_coin_size := 0.46
+## Seconds a collected coin takes to rise and fade, or a lost one to shrink.
+@export_range(0.1, 3.0, 0.05) var gold_effect_duration := 0.7
+## How far (in cells) a collected coin rises.
+@export_range(0.0, 3.0, 0.05) var gold_rise := 1.1
+
 @export_group("Editor Preview")
 ## Shows a sample board in the editor so the skin and effects can be seen while editing.
 @export var editor_preview := true
@@ -57,6 +67,13 @@ signal drag_moved(position: Vector2)
 @export_tool_button("Preview Line Wave", "Play") var preview_wave_button := preview_line_wave
 
 var board: Array = []
+## Squares that still carry gold: cell -> gold. Set by the game.
+var gold_cells := {}
+# Coins playing their collect or lose effect, and how far along it is.
+var gold_collected: Array[Vector2i] = []
+var gold_lost: Array[Vector2i] = []
+var gold_effect_progress := 1.0
+var gold_tween: Tween
 var pieces: Array = []
 var targets: Array[int] = []
 var completed_regions: Array[bool] = []
@@ -371,6 +388,7 @@ func _draw() -> void:
 			look.draw_block(self, fill_rect, color)
 	for cell in vanishing_cells:
 		_draw_vanishing_cell(look, rect, cs, cell)
+	_draw_gold(rect, cs)
 	_draw_drop_ghost(look, rect, cs)
 	if not targets.is_empty() and not board.is_empty():
 		for region in BOARD_SIZE:
@@ -392,6 +410,38 @@ func _draw_vanishing_cell(look: SudorisSkin, rect: Rect2, cs: float, cell: Vecto
 	var fill_rect := Rect2(rect.position + Vector2(cell) * cs, Vector2.ONE * cs).grow(-1.5)
 	var half := fill_rect.size * cell_scale * 0.5
 	look.draw_block(self, Rect2(fill_rect.get_center() - half, half * 2.0), vanishing_cells[cell].lerp(look.completed_color, green))
+
+## Plays the coin effects: collected coins rise and fade, lost ones shrink to grey.
+func animate_gold(collected: Array[Vector2i], lost: Array[Vector2i]) -> void:
+	gold_collected = collected.duplicate()
+	gold_lost = lost.duplicate()
+	if gold_tween:
+		gold_tween.kill()
+	gold_effect_progress = 0.0
+	gold_tween = create_tween()
+	gold_tween.tween_method(func(value: float) -> void:
+		gold_effect_progress = value
+		queue_redraw(), 0.0, 1.0, gold_effect_duration)
+
+func _draw_coin(center: Vector2, radius: float, color: Color) -> void:
+	draw_circle(center, radius, color)
+	draw_circle(center, radius * 0.64, color.darkened(0.25))
+	draw_circle(center + Vector2(-0.3, -0.3) * radius, radius * 0.18, Color(1, 1, 1, 0.55 * color.a))
+
+func _draw_gold(rect: Rect2, cs: float) -> void:
+	var radius := cs * gold_coin_size * 0.5
+	for cell in gold_cells:
+		if board.is_empty() or board[cell.y][cell.x] == EMPTY:
+			_draw_coin(rect.position + (Vector2(cell) + Vector2(0.5, 0.5)) * cs, radius, gold_color)
+	if gold_effect_progress >= 1.0:
+		return
+	var t := gold_effect_progress
+	for cell in gold_collected:
+		var center := rect.position + (Vector2(cell) + Vector2(0.5, 0.5)) * cs - Vector2(0, gold_rise * cs * ease(t, 0.4))
+		_draw_coin(center, radius * (1.0 + 0.35 * sin(PI * t)), Color(gold_color, 1.0 - ease(t, 3.0)))
+	for cell in gold_lost:
+		var center := rect.position + (Vector2(cell) + Vector2(0.5, 0.5)) * cs
+		_draw_coin(center, radius * (1.0 - t), Color(gold_color.lerp(Color(0.5, 0.5, 0.5), t), 1.0 - t))
 
 func _region_rect(rect: Rect2, cs: float, region: int) -> Rect2:
 	return Rect2(rect.position + Vector2(region % 3, region / 3) * 3.0 * cs, Vector2.ONE * cs * 3.0)

@@ -64,12 +64,23 @@ const PieceIcon := preload("res://piece_icon.gd")
 @export_group("Gold")
 ## Gold for every completed Classic level.
 @export_range(0, 20) var level_gold := 2
-## Finishing a level within this many seconds pays fast_level_gold more.
-@export_range(10.0, 900.0, 5.0) var fast_level_seconds := 150.0
-@export_range(0, 20) var fast_level_gold := 3
-## Completing a region within this many seconds of the previous one pays region_streak_gold.
-@export_range(1.0, 120.0, 1.0) var region_streak_seconds := 30.0
-@export_range(0, 20) var region_streak_gold := 1
+## Squares that carry gold on every Classic level, each in a different region.
+@export_range(0, 9) var gold_square_count := 3
+## Gold on each of those squares. It is collected only when the piece that
+## completes the square's region covers the square; any other piece loses it.
+@export_range(0, 20) var gold_square_value := 1
+## Jokers offered for free at the start of a new game; the player picks one.
+@export_range(1, 7) var free_joker_choices := 3
+## Side of a joker card in the free pick, in pixels.
+@export_range(48.0, 140.0, 1.0) var free_card_size := 92.0
+## Seconds a finger stays on a free pick card before its description opens.
+@export_range(0.1, 1.5, 0.05) var free_card_hold_seconds := 0.35
+## Seconds a collected coin takes to fly up to the gold count in the header.
+@export_range(0.1, 2.0, 0.05) var gold_fly_seconds := 0.65
+## Letters per second on the level-end screen.
+@export_range(5.0, 200.0, 1.0) var win_text_speed := 32.0
+## Level-end window size as a share of the screen.
+@export var win_panel_share := Vector2(0.86, 0.75)
 ## Jokers on sale each time the shop opens, picked at random with equal chances.
 @export_range(1, 7) var shop_offer_count := 2
 ## Gold for swapping the jokers on sale for others that were not on sale.
@@ -145,6 +156,7 @@ class Placement:
 @onready var win_message: Label = $WinModal/Center/Panel/Content/Message
 @onready var shop_modal: Control = %ShopModal
 @onready var shop_gold: Label = %ShopGold
+@onready var shop_title: Label = $ShopModal/Center/Panel/Content/ShopTitle
 @onready var shop_info: Label = %ShopInfo
 @onready var shop_list: VBoxContainer = %ShopList
 @onready var pick_modal: Control = %JokerPickModal
@@ -188,12 +200,20 @@ var gold := 0
 var joker_slots: Array[String] = ["", ""]
 ## Seconds played on the current Classic level (pauses with the game).
 var level_time := 0.0
-## level_time when the last region was completed, for the streak gold.
-var last_region_time := -1000.0
-## Regions that already paid gold on this level, so a reset can't farm them.
-var rewarded_regions := {}
-## Gold paid by region streaks on this level, shown on the level-end screen.
-var level_streak_gold := 0
+## Squares that still carry gold on this level: cell -> gold. A square leaves
+## when it is collected or lost, and a reset does not bring it back.
+var gold_cells := {}
+## Gold collected from squares on this level, shown on the level-end screen.
+var level_square_gold := 0
+## True while the shop is the free joker pick at the start of a new game.
+var shop_free_pick := false
+## The free joker has been picked for the current run (cleared by a loss).
+var free_joker_taken := false
+## Gold from coins still flying to the header; the count shows it once they land.
+var gold_in_flight := 0
+## Description bubble of the free pick card being held, if any.
+var free_card_bubble: Control
+var win_text_tween: Tween
 ## Jokers on sale in the open shop; "" marks one that was bought.
 var shop_offers: Array[String] = []
 ## Chains the shop sign hangs from, and the coin next to the gold in the header.
@@ -221,7 +241,7 @@ func _ready() -> void:
 	_connect_action_button(%PauseButton, show_pause_menu)
 	_connect_action_button(%ResumeButton, hide_pause_menu)
 	_connect_action_button(%NewPuzzleButton, new_puzzle)
-	_connect_action_button(%RestartButton, new_puzzle)
+	_connect_action_button(%RestartButton, restart_after_failure)
 	_connect_action_button(%HowToPlayButton, hide_how_to)
 	_connect_action_button(%NextLevelButton, next_level)
 	_connect_action_button(%ClassicButton, start_mode.bind(Mode.CLASSIC))
@@ -338,9 +358,9 @@ func new_puzzle() -> void:
 	time_left = time_attack_start_seconds
 	time_attack_regions = 0
 	level_time = 0.0
-	last_region_time = -1000.0
-	rewarded_regions.clear()
-	level_streak_gold = 0
+	level_square_gold = 0
+	place_gold_squares()
+	gold_in_flight = 0
 	armed_slot = -1
 	pocket_piece = -1
 	if pocket_slot != -1:
@@ -875,7 +895,10 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 	var earned := placed_cells.size() * points_per_square * multiplier
 	if mode == Mode.TIME_ATTACK:
 		score += earned
-	var gold_earned := award_region_gold(newly_completed)
+	var board_cells: Array[Vector2i] = []
+	for cell in placed_cells:
+		board_cells.append(origin + cell)
+	var gold_earned := settle_gold_squares(board_cells, newly_completed)
 	if piece_id == pocket_piece:
 		pocket_piece = -1
 	var vanishing := {}
@@ -896,9 +919,6 @@ func place_piece(piece_id: int, origin: Vector2i) -> bool:
 		message = tr("+%d gold") % gold_earned
 	else:
 		message = intro_message()
-	var board_cells: Array[Vector2i] = []
-	for cell in placed_cells:
-		board_cells.append(origin + cell)
 	board_view.animate_completed_regions(newly_completed, board_cells, vanishing)
 	vibrate_for_move(not newly_completed.is_empty())
 	board_view.animate_wave(new_completed_lines(completed_before_regions, completed_after_regions))
@@ -1041,11 +1061,10 @@ func show_game_over() -> void:
 		game_over_title.text = tr("GAME FAILED")
 		game_over_reason.text = message + "\n" + tr("Last Breath kept your level and broke.")
 	else:
-		# Failing a puzzle sends the player back to the first level.
-		level = 1
-		save_progress()
+		# Failing a puzzle starts the game over: first level, no gold, no jokers.
+		start_new_run()
 		game_over_title.text = tr("GAME FAILED")
-		game_over_reason.text = message + "\n" + tr("Back to level 1.")
+		game_over_reason.text = message + "\n" + tr("Back to level 1. Gold and jokers are gone.")
 	refresh_views()
 	open_modal(game_over_modal)
 
@@ -1062,6 +1081,8 @@ func show_how_to() -> void:
 
 func hide_how_to() -> void:
 	how_to_modal.visible = false
+	if not main_menu.visible:
+		offer_free_joker()
 
 func start_mode(new_mode: Mode) -> void:
 	mode = new_mode
@@ -1071,6 +1092,13 @@ func start_mode(new_mode: Mode) -> void:
 		how_to_seen = true
 		save_progress()
 		show_how_to()
+	else:
+		offer_free_joker()
+
+## The button on the failure window: a new puzzle, and after a lost run the free joker pick.
+func restart_after_failure() -> void:
+	new_puzzle()
+	offer_free_joker()
 
 func show_main_menu() -> void:
 	dragging_piece = -1
@@ -1138,7 +1166,16 @@ func _show_toggle(toggle: Button, on: bool) -> void:
 		toggle.add_theme_color_override(state, text_color)
 
 func show_win() -> void:
+	var panel: Control = win_modal.get_node("Center/Panel")
+	panel.custom_minimum_size = get_viewport_rect().size * win_panel_share
 	open_modal(win_modal)
+	# The text types itself out letter by letter.
+	if win_text_tween:
+		win_text_tween.kill()
+	win_message.visible_ratio = 0.0
+	var letters := win_message.get_total_character_count()
+	win_text_tween = create_tween()
+	win_text_tween.tween_property(win_message, "visible_characters", letters, letters / win_text_speed).from(0)
 
 func hide_win() -> void:
 	win_modal.visible = false
@@ -1161,6 +1198,9 @@ func load_progress() -> void:
 		var saved_slots: Array = config.get_value("jokers", "slots", [])
 		for slot in mini(saved_slots.size(), joker_slots.size()):
 			joker_slots[slot] = str(saved_slots[slot]) if SudorisJokers.CATALOG.has(str(saved_slots[slot])) else ""
+		# Saves from before the free joker count as having had it once they got going.
+		var had_it := level > 1 or gold > 0 or joker_slots.any(func(id): return id != "")
+		free_joker_taken = bool(config.get_value("jokers", "free_joker_taken", had_it))
 
 func save_progress() -> void:
 	var config := ConfigFile.new()
@@ -1169,6 +1209,7 @@ func save_progress() -> void:
 	config.set_value("time_attack", "best_score", best_time_attack_score)
 	config.set_value("jokers", "gold", gold)
 	config.set_value("jokers", "slots", joker_slots)
+	config.set_value("jokers", "free_joker_taken", free_joker_taken)
 	config.save(SAVE_PATH)
 
 func refresh_views() -> void:
@@ -1181,7 +1222,7 @@ func refresh_views() -> void:
 	refresh_timer()
 	# Classic shows the gold in the header; Time Attack shows its score.
 	if mode == Mode.CLASSIC:
-		score_label.text = "%d" % gold
+		score_label.text = "%d" % (gold - gold_in_flight)
 		score_label.add_theme_color_override("font_color", gold_color)
 	else:
 		score_label.text = "%d" % score
@@ -1189,6 +1230,8 @@ func refresh_views() -> void:
 	gold_coin.visible = mode == Mode.CLASSIC
 	combo_label.text = tr("COMBO x%d") % maxi(1, combo)
 	combo_label.visible = mode == Mode.TIME_ATTACK and combo > 0
+	board_view.gold_cells = gold_cells
+	board_view.gold_color = gold_color
 	board_view.configure(board, pieces, targets, dragging_piece, drag_position)
 	var completed_flags: Array[bool] = []
 	completed_flags.resize(BOARD_SIZE)
@@ -1351,42 +1394,200 @@ func _tile_region(region: int, cells: Array[Vector2i], wanted: int, next_id: int
 
 # --- Gold and jokers (Classic) ----------------------------------------------------
 
-## Pays region_streak_gold for every newly completed region that came within
-## region_streak_seconds of the previous one. Each region pays once per level.
-func award_region_gold(regions: Array[int]) -> int:
-	if mode != Mode.CLASSIC:
-		return 0
+## Puts gold on gold_square_count random squares, each in a different region.
+## Classic only; Time Attack has no gold.
+func place_gold_squares() -> void:
+	gold_cells.clear()
+	if mode != Mode.CLASSIC or gold_square_value <= 0:
+		return
+	var regions := range(BOARD_SIZE)
+	regions.shuffle()
+	for index in mini(gold_square_count, regions.size()):
+		var cells := region_cells(regions[index])
+		gold_cells[cells[rng.randi_range(0, cells.size() - 1)]] = gold_square_value
+
+## Settles the gold squares a move just covered. A square's gold is collected
+## when its region is among the regions this move completed (so the piece that
+## covered it was the region's last); otherwise the gold is lost. Returns the
+## gold collected.
+func settle_gold_squares(new_cells: Array[Vector2i], completed_regions: Array[int]) -> int:
 	var earned := 0
-	for region in regions:
-		if rewarded_regions.has(region):
+	var collected: Array[Vector2i] = []
+	var lost: Array[Vector2i] = []
+	for cell in new_cells:
+		if not gold_cells.has(cell):
 			continue
-		rewarded_regions[region] = true
-		if level_time - last_region_time <= region_streak_seconds:
-			earned += region_streak_gold
-		last_region_time = level_time
+		if completed_regions.has(cell.y / REGION_SIZE * 3 + cell.x / REGION_SIZE):
+			earned += int(gold_cells[cell])
+			collected.append(cell)
+		else:
+			lost.append(cell)
+		gold_cells.erase(cell)
+	if not lost.is_empty():
+		board_view.animate_gold([] as Array[Vector2i], lost)
+	for cell in collected:
+		fly_coin(cell, gold_square_value)
 	if earned > 0:
 		gold += earned
-		level_streak_gold += earned
+		level_square_gold += earned
 		save_progress()
 	return earned
 
-## The guaranteed level gold plus the fast-finish bonus; also fills in the
-## level-end screen with the time and every bit of gold the level paid.
+## A collected coin flies from its square up to the gold count, which goes up
+## when it lands.
+func fly_coin(cell: Vector2i, amount: int) -> void:
+	if not is_inside_tree() or not board_view.is_inside_tree():
+		return
+	var cs := board_view.cell_size()
+	var board_transform := board_view.get_global_transform_with_canvas()
+	var from: Vector2 = board_transform * (board_view.grid_rect().position + (Vector2(cell) + Vector2(0.5, 0.5)) * cs)
+	var to: Vector2 = gold_coin.get_global_transform_with_canvas() * (gold_coin.size * 0.5)
+	var coin := GoldCoin.new()
+	coin.color = gold_color
+	coin.top_level = true
+	coin.radius = cs * board_view.gold_coin_size * 0.5
+	coin.custom_minimum_size = Vector2.ZERO
+	coin.size = Vector2.ONE * coin.radius * 2.0
+	coin.pivot_offset = coin.size * 0.5
+	coin.position = from - coin.size * 0.5
+	drag_layer.add_child(coin)
+	gold_in_flight += amount
+	# A slight arc: up and out first, then into the header coin, shrinking to its size.
+	var control := from.lerp(to, 0.35) + Vector2(-40.0, -30.0)
+	var end_scale := 11.0 / maxf(coin.radius, 1.0)
+	var tween := coin.create_tween()
+	tween.tween_method(func(t: float) -> void:
+		var a := from.lerp(control, t)
+		var b := control.lerp(to, t)
+		coin.position = a.lerp(b, t) - coin.size * 0.5
+		coin.scale = Vector2.ONE * lerpf(1.25 if t < 0.2 else 1.0, end_scale, ease(t, 2.0)), 0.0, 1.0, gold_fly_seconds).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tween.tween_callback(func() -> void:
+		coin.queue_free()
+		land_coin(amount))
+
+func land_coin(amount: int) -> void:
+	gold_in_flight = maxi(0, gold_in_flight - amount)
+	refresh_views()
+	gold_coin.pivot_offset = gold_coin.size * 0.5
+	var pulse := gold_coin.create_tween()
+	pulse.tween_property(gold_coin, "scale", Vector2.ONE * 1.35, 0.08)
+	pulse.tween_property(gold_coin, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+## The level gold; also fills in the level-end screen with the time and every
+## bit of gold the level paid.
 func award_level_gold() -> void:
-	var earned := level_gold
 	var seconds := int(level_time)
 	var lines: Array[String] = [tr("Finished in %d:%02d") % [seconds / 60, seconds % 60], ""]
-	lines.append(tr("+%d gold for the level") % level_gold)
-	if level_time <= fast_level_seconds:
-		earned += fast_level_gold
-		lines.append(tr("+%d gold for a fast finish") % fast_level_gold)
-	if level_streak_gold > 0:
-		lines.append(tr("+%d gold for quick regions") % level_streak_gold)
-	gold += earned
+	lines.append(tr("Level completed +%d gold") % level_gold)
+	if level_square_gold > 0:
+		lines.append(tr("From squares +%d gold") % level_square_gold)
+	gold += level_gold
 	save_progress()
 	lines.append("")
-	lines.append(tr("Gold earned: %d") % (earned + level_streak_gold))
+	lines.append(tr("Gold earned: %d") % (level_gold + level_square_gold))
 	win_message.text = "\n".join(lines)
+
+## A new run: level 1, no gold, empty joker slots and a fresh free joker pick.
+func start_new_run() -> void:
+	level = 1
+	gold = 0
+	joker_slots.fill("")
+	pocket_slot = -1
+	pocket_piece = -1
+	armed_slot = -1
+	free_joker_taken = false
+	save_progress()
+
+## Opens the free joker pick when the run has not had its free joker yet.
+func offer_free_joker() -> void:
+	if mode != Mode.CLASSIC or free_joker_taken or shop_modal.visible or empty_joker_slot() == -1:
+		return
+	shop_free_pick = true
+	shop_offers.clear()
+	var pool := SudorisJokers.ids().duplicate()
+	for index in mini(free_joker_choices, pool.size()):
+		shop_offers.append(pool.pop_at(rng.randi_range(0, pool.size() - 1)))
+	shop_info.text = tr("Pick one joker for free to start the game.")
+	fill_shop()
+	shop_modal.visible = true
+	drop_shop_sign()
+
+## Opens a bubble above a held free pick card with the joker's name and text;
+## it rises and fades in.
+func show_free_card_bubble(card: Control) -> void:
+	hide_free_card_bubble()
+	var id: String = card.id
+	var bubble := PanelContainer.new()
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color("#23301a")
+	box.set_corner_radius_all(14)
+	box.content_margin_left = 14
+	box.content_margin_right = 14
+	box.content_margin_top = 10
+	box.content_margin_bottom = 12
+	box.shadow_color = Color(0, 0, 0, 0.35)
+	box.shadow_size = 8
+	bubble.add_theme_stylebox_override("panel", box)
+	var words := VBoxContainer.new()
+	words.add_theme_constant_override("separation", 4)
+	var title := Label.new()
+	title.text = tr(SudorisJokers.joker_name(id))
+	if SudorisJokers.is_passive(id):
+		title.text += "  ·  " + tr("PASSIVE")
+	title.add_theme_font_override("font", %ShopContinueButton.get_theme_font("font"))
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", gold_color)
+	var about := Label.new()
+	about.text = tr(SudorisJokers.text(id))
+	about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	about.custom_minimum_size = Vector2(220, 0)
+	about.add_theme_font_size_override("font_size", 14)
+	about.add_theme_color_override("font_color", Color("#e8edd0"))
+	words.add_child(title)
+	words.add_child(about)
+	bubble.add_child(words)
+	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bubble.top_level = true
+	shop_modal.add_child(bubble)
+	bubble.reset_size()
+	var card_rect := card.get_global_rect()
+	var width := bubble.size.x
+	var x := clampf(card_rect.get_center().x - width * 0.5, 8.0, get_viewport_rect().size.x - width - 8.0)
+	var target := Vector2(x, card_rect.position.y - bubble.size.y - 12.0)
+	bubble.pivot_offset = Vector2(card_rect.get_center().x - x, bubble.size.y)
+	bubble.position = target + Vector2(0, 16)
+	bubble.scale = Vector2.ONE * 0.85
+	bubble.modulate.a = 0.0
+	var tween := bubble.create_tween().set_parallel()
+	tween.tween_property(bubble, "position", target, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(bubble, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(bubble, "modulate:a", 1.0, 0.15)
+	free_card_bubble = bubble
+
+func hide_free_card_bubble() -> void:
+	if not is_instance_valid(free_card_bubble):
+		return
+	var bubble := free_card_bubble
+	free_card_bubble = null
+	var tween := bubble.create_tween().set_parallel()
+	tween.tween_property(bubble, "modulate:a", 0.0, 0.12)
+	tween.tween_property(bubble, "position:y", bubble.position.y + 8.0, 0.12)
+	tween.chain().tween_callback(bubble.queue_free)
+
+## Takes the free joker into the first empty slot and closes the pick.
+func take_free_joker(id: String) -> bool:
+	var slot := empty_joker_slot()
+	if not shop_free_pick or slot == -1:
+		return false
+	joker_slots[slot] = id
+	free_joker_taken = true
+	shop_free_pick = false
+	hide_free_card_bubble()
+	save_progress()
+	close_shop()
+	message = tr("%s is in your slots.") % tr(SudorisJokers.joker_name(id))
+	refresh_views()
+	return true
 
 func empty_joker_slot() -> int:
 	return joker_slots.find("")
@@ -1460,6 +1661,7 @@ func reroll_shop() -> bool:
 	return true
 
 func open_shop() -> void:
+	shop_free_pick = false
 	shop_info.text = tr("Jokers go into the two slots under the tray.")
 	if empty_joker_slot() == -1:
 		shop_info.text = tr("Both joker slots are full.")
@@ -1490,6 +1692,36 @@ func fill_shop() -> void:
 		shop_list.remove_child(child)
 		child.queue_free()
 	var slot_free := empty_joker_slot() != -1
+	%ShopContinueButton.visible = not shop_free_pick
+	shop_title.text = tr("FREE JOKER") if shop_free_pick else tr("JOKER SHOP")
+	shop_gold.visible = not shop_free_pick
+	# The free pick is only one row of cards, so its window is shorter.
+	$ShopModal/Center/Panel/Content/ShopScroll.custom_minimum_size.y = 230.0 if shop_free_pick else 400.0
+	if shop_free_pick:
+		var cards := HBoxContainer.new()
+		cards.alignment = BoxContainer.ALIGNMENT_CENTER
+		cards.add_theme_constant_override("separation", 14)
+		for id in shop_offers:
+			var card := JokerCard.new()
+			card.id = id
+			card.icon = SudorisJokers.icon(id)
+			card.custom_minimum_size = Vector2.ONE * free_card_size
+			card.hold_seconds = free_card_hold_seconds
+			card.tapped.connect(take_free_joker)
+			card.hold_started.connect(show_free_card_bubble)
+			card.hold_ended.connect(hide_free_card_bubble)
+			cards.add_child(card)
+		var spacer := Control.new()
+		spacer.custom_minimum_size = Vector2(0, 24)
+		shop_list.add_child(spacer)
+		shop_list.add_child(cards)
+		var hint := _shop_note(tr("Tap a joker to take it. Hold it to read what it does."))
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hint.custom_minimum_size = Vector2(280, 0)
+		shop_list.add_child(spacer.duplicate())
+		shop_list.add_child(hint)
+		return
 	shop_list.add_child(_shop_heading(tr("ON SALE")))
 	for id in shop_offers:
 		if id == "":
@@ -1704,7 +1936,7 @@ func finish_joker_move(completed_before: Array[int], new_cells: Array[Vector2i])
 	for region in completed_after:
 		if not completed_before.has(region):
 			newly_completed.append(region)
-	var earned := award_region_gold(newly_completed)
+	var earned := settle_gold_squares(new_cells, newly_completed)
 	if earned > 0:
 		message += tr("  /  +%d gold") % earned
 	board_view.animate_completed_regions(newly_completed, new_cells, {})
@@ -1950,6 +2182,7 @@ func cancel_pick() -> void:
 ## The gold coin next to the gold count in the header.
 class GoldCoin extends Control:
 	var color := Color("#f2d35e")
+	var radius := 11.0
 
 	func _init() -> void:
 		custom_minimum_size = Vector2(24, 24)
@@ -1958,8 +2191,8 @@ class GoldCoin extends Control:
 
 	func _draw() -> void:
 		var center := size * 0.5
-		draw_circle(center, 11.0, color)
-		draw_circle(center, 7.0, color.darkened(0.25))
+		draw_circle(center, radius, color)
+		draw_circle(center, radius * 0.64, color.darkened(0.25))
 
 ## Two chains from the top of the screen down to the shop sign.
 class ShopChains extends Control:
@@ -2004,3 +2237,58 @@ class ShopChains extends Control:
 				# Link seen edge-on: a short bar.
 				draw_line(center - direction * link_length * 0.6, center + direction * link_length * 0.6, shade, 4.0, true)
 				draw_line(center - direction * link_length * 0.6, center + direction * link_length * 0.6, color, 2.2, true)
+
+## A big joker card in the free pick: tap to take it, hold to read what it does.
+class JokerCard extends Control:
+	signal tapped(id: String)
+	signal hold_started(card: Control)
+	signal hold_ended
+	var id := ""
+	var icon: Texture2D
+	var hold_seconds := 0.35
+	var color := Color("#2f3d1e")
+	var border := Color("#8fa64a")
+	var icon_color := Color("#c4d578")
+	var _down_ms := -1
+	var _holding := false
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+
+	func _process(_delta: float) -> void:
+		if _down_ms >= 0 and not _holding and Time.get_ticks_msec() - _down_ms >= hold_seconds * 1000.0:
+			_holding = true
+			scale = Vector2.ONE * 1.06
+			hold_started.emit(self)
+
+	func _gui_input(event: InputEvent) -> void:
+		# Mouse clicks also arrive as emulated touches, so only touches are handled.
+		if not (event is InputEventScreenTouch and event.index == 0):
+			return
+		accept_event()
+		pivot_offset = size * 0.5
+		if event.pressed:
+			_down_ms = Time.get_ticks_msec()
+			_holding = false
+			scale = Vector2.ONE * 0.96
+			return
+		var was_holding := _holding
+		var inside := Rect2(Vector2.ZERO, size).has_point(event.position)
+		_down_ms = -1
+		_holding = false
+		scale = Vector2.ONE
+		if was_holding:
+			hold_ended.emit()
+		elif inside:
+			tapped.emit(id)
+
+	func _draw() -> void:
+		var box := StyleBoxFlat.new()
+		box.bg_color = color
+		box.set_corner_radius_all(18)
+		box.set_border_width_all(2)
+		box.border_color = border
+		draw_style_box(box, Rect2(Vector2.ZERO, size))
+		if icon:
+			var side := size.x * 0.62
+			draw_texture_rect(icon, Rect2(size * 0.5 - Vector2.ONE * side * 0.5, Vector2.ONE * side), false, icon_color)

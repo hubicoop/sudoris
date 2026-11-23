@@ -1047,12 +1047,16 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 26
 theme_override_fonts/font = ExtResource("5_bold")
 theme_override_colors/font_color = Color(0.286275, 0.462745, 0.137255, 1)
-text = "LEVEL COMPLETE"
+text = "LEVEL COMPLETED"
 horizontal_alignment = 1
+autowrap_mode = 2
 
 [node name="Message" type="Label" parent="WinModal/Center/Panel/Content" unique_id=751707764]
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 21
+theme_override_constants/line_spacing = 6
+vertical_alignment = 1
 theme_override_colors/font_color = Color(0.137255, 0.180392, 0.0784314, 1)
 text = "The next puzzle will be a little harder."
 horizontal_alignment = 1
