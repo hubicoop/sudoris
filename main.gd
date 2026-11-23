@@ -9,6 +9,7 @@ const SAVE_PATH := "user://progress.cfg"
 const SudorisSettings := preload("res://settings.gd")
 const SudorisStrings := preload("res://strings.gd")
 const SudorisJokers := preload("res://jokers.gd")
+const SudorisSfx := preload("res://sfx.gd")
 const PieceIcon := preload("res://piece_icon.gd")
 
 ## Piece colours, used in order. Select the root "Sudoris" node to edit them.
@@ -55,6 +56,8 @@ const PieceIcon := preload("res://piece_icon.gd")
 @export_range(0.0, 120.0, 1.0) var time_attack_bonus_seconds := 20.0
 ## The clock turns red below this many seconds.
 @export_range(0.0, 60.0, 1.0) var time_attack_warning_seconds := 10.0
+## Time Attack ticks once a second for the last this many seconds.
+@export_range(0.0, 60.0, 1.0) var time_attack_tick_seconds := 20.0
 ## New regions get counts from 3 to 4 at first; every this many completed regions
 ## the highest possible count grows by one, up to 6.
 @export_range(1, 20) var time_attack_target_growth := 3
@@ -195,6 +198,9 @@ var time_attack_regions := 0
 ## The rules are shown automatically before the very first game.
 var how_to_seen := false
 var settings := SudorisSettings.new()
+var sfx := SudorisSfx.new()
+## The whole second the Time Attack clock last ticked on.
+var last_tick_second := -1
 var gold := 0
 ## Joker ids in the two slots under the tray; "" is an empty slot.
 var joker_slots: Array[String] = ["", ""]
@@ -236,6 +242,7 @@ func _ready() -> void:
 	rng.randomize()
 	settings.load_settings()
 	settings.apply()
+	add_child(sfx)
 	load_progress()
 	_connect_action_button(%ResetButton, reset_puzzle)
 	_connect_action_button(%PauseButton, show_pause_menu)
@@ -298,6 +305,11 @@ func _process(delta: float) -> void:
 func tick_clock(delta: float) -> void:
 	time_left = maxf(time_left - delta, 0.0)
 	refresh_timer()
+	var second := int(ceil(time_left))
+	if second != last_tick_second:
+		last_tick_second = second
+		if second > 0 and second <= time_attack_tick_seconds:
+			sfx.play(SudorisSfx.TICK)
 	if time_left <= 0.0:
 		time_up()
 
@@ -768,6 +780,7 @@ func has_available_move() -> bool:
 func start_drag(piece_id: int, global_position: Vector2) -> void:
 	armed_slot = -1
 	dragging_piece = piece_id
+	sfx.play(SudorisSfx.PICK)
 	drag_position = board_local_position(global_position)
 	board_view.begin_drag(drag_position)
 	update_drag_lift()
@@ -822,6 +835,7 @@ func drop_piece(origin: Vector2i) -> void:
 	dragging_piece = -1
 	refresh_views()
 	if placed:
+		sfx.play(SudorisSfx.PLACE)
 		var placed_cells: Array[Vector2i] = []
 		for cell in pieces[piece_id].rotated_cells():
 			placed_cells.append(origin + cell)
@@ -1046,6 +1060,7 @@ func hide_pause_menu() -> void:
 
 func show_game_over() -> void:
 	dragging_piece = -1
+	sfx.play(SudorisSfx.LOSE)
 	if mode == Mode.TIME_ATTACK:
 		var record := score > best_time_attack_score
 		best_time_attack_score = maxi(best_time_attack_score, score)
@@ -1169,6 +1184,7 @@ func show_win() -> void:
 	var panel: Control = win_modal.get_node("Center/Panel")
 	panel.custom_minimum_size = get_viewport_rect().size * win_panel_share
 	open_modal(win_modal)
+	sfx.play(SudorisSfx.LEVEL_COMPLETE)
 	# The text types itself out letter by letter.
 	if win_text_tween:
 		win_text_tween.kill()
@@ -1826,6 +1842,7 @@ func use_joker_slot(slot: int, global_position: Vector2) -> void:
 			message = tr("Last Breath works on its own when you fail.")
 		SudorisJokers.POCKET:
 			pocket_slot = slot
+			sfx.play(SudorisSfx.JOKER)
 			message = tr("Drag a piece onto the pocket to keep it for later.")
 		SudorisJokers.ERASER:
 			armed_slot = slot
@@ -1843,6 +1860,7 @@ func use_joker_slot(slot: int, global_position: Vector2) -> void:
 	refresh_views()
 
 func use_up_joker(slot: int) -> void:
+	sfx.play(SudorisSfx.JOKER)
 	joker_slots[slot] = ""
 	if armed_slot == slot:
 		armed_slot = -1
